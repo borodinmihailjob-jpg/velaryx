@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
@@ -92,6 +92,40 @@ function Shell({ title, subtitle, children, onBack }) {
   );
 }
 
+/* ===== Timezone list ===== */
+const TIMEZONES = [
+  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Asia/Yekaterinburg',
+  'Asia/Omsk', 'Asia/Krasnoyarsk', 'Asia/Irkutsk', 'Asia/Yakutsk',
+  'Asia/Vladivostok', 'Asia/Magadan', 'Asia/Kamchatka',
+  'Europe/Minsk', 'Europe/Kiev', 'Asia/Almaty', 'Asia/Tashkent',
+  'Asia/Baku', 'Asia/Tbilisi', 'Asia/Yerevan', 'Asia/Bishkek',
+  'Europe/Chisinau', 'UTC',
+];
+
+const TZ_LABELS = {
+  'Europe/Moscow': 'Москва (UTC+3)',
+  'Europe/Kaliningrad': 'Калининград (UTC+2)',
+  'Europe/Samara': 'Самара (UTC+4)',
+  'Asia/Yekaterinburg': 'Екатеринбург (UTC+5)',
+  'Asia/Omsk': 'Омск (UTC+6)',
+  'Asia/Krasnoyarsk': 'Красноярск (UTC+7)',
+  'Asia/Irkutsk': 'Иркутск (UTC+8)',
+  'Asia/Yakutsk': 'Якутск (UTC+9)',
+  'Asia/Vladivostok': 'Владивосток (UTC+10)',
+  'Asia/Magadan': 'Магадан (UTC+11)',
+  'Asia/Kamchatka': 'Камчатка (UTC+12)',
+  'Europe/Minsk': 'Минск (UTC+3)',
+  'Europe/Kiev': 'Киев (UTC+2)',
+  'Asia/Almaty': 'Алматы (UTC+6)',
+  'Asia/Tashkent': 'Ташкент (UTC+5)',
+  'Asia/Baku': 'Баку (UTC+4)',
+  'Asia/Tbilisi': 'Тбилиси (UTC+4)',
+  'Asia/Yerevan': 'Ереван (UTC+4)',
+  'Asia/Bishkek': 'Бишкек (UTC+6)',
+  'Europe/Chisinau': 'Кишинёв (UTC+2)',
+  'UTC': 'UTC',
+};
+
 /* ===== Onboarding ===== */
 function Onboarding({ onComplete }) {
   const [loading, setLoading] = useState(false);
@@ -102,8 +136,68 @@ function Onboarding({ onComplete }) {
     birth_place: '',
     latitude: '',
     longitude: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow'
   });
+
+  /* City autocomplete */
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [citySelected, setCitySelected] = useState(false);
+  const [showManualCoords, setShowManualCoords] = useState(false);
+  const debounceRef = useRef(null);
+  const wrapperRef = useRef(null);
+
+  const searchCities = useCallback((query) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.length < 1) {
+      setCitySuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await apiRequest(`/v1/geo/cities?q=${encodeURIComponent(query)}`);
+        setCitySuggestions(results);
+        setShowSuggestions(results.length > 0);
+      } catch {
+        setCitySuggestions([]);
+      }
+    }, 300);
+  }, []);
+
+  const handleCityInput = (value) => {
+    setForm((prev) => ({ ...prev, birth_place: value }));
+    setCitySelected(false);
+    searchCities(value);
+  };
+
+  const selectCity = (city) => {
+    setForm((prev) => ({
+      ...prev,
+      birth_place: city.name,
+      latitude: String(city.latitude),
+      longitude: String(city.longitude),
+      timezone: city.timezone,
+    }));
+    setCitySelected(true);
+    setShowSuggestions(false);
+    setCitySuggestions([]);
+  };
+
+  /* Close dropdown on outside click */
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('touchstart', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('touchstart', handleClick);
+    };
+  }, []);
 
   const canSubmit =
     form.birth_date &&
@@ -172,50 +266,94 @@ function Onboarding({ onComplete }) {
         </motion.div>
 
         <motion.div variants={staggerItem}>
-          <label>
-            Город рождения
-            <input
-              placeholder="Москва"
-              value={form.birth_place}
-              onChange={(e) => setForm({ ...form, birth_place: e.target.value })}
-            />
-          </label>
-        </motion.div>
-
-        <motion.div variants={staggerItem}>
-          <div className="grid-2">
+          <div className="city-autocomplete" ref={wrapperRef}>
             <label>
-              Широта
+              Город рождения
+              <Hint text="Начните вводить название и выберите из списка" />
               <input
-                placeholder="55.7558"
-                value={form.latitude}
-                onChange={(e) => setForm({ ...form, latitude: e.target.value })}
-                inputMode="decimal"
+                placeholder="Начните вводить город..."
+                value={form.birth_place}
+                onChange={(e) => handleCityInput(e.target.value)}
+                onFocus={() => { if (citySuggestions.length > 0) setShowSuggestions(true); }}
+                autoComplete="off"
               />
             </label>
-            <label>
-              Долгота
-              <input
-                placeholder="37.6173"
-                value={form.longitude}
-                onChange={(e) => setForm({ ...form, longitude: e.target.value })}
-                inputMode="decimal"
-              />
-            </label>
+            <AnimatePresence>
+              {showSuggestions && citySuggestions.length > 0 && (
+                <motion.ul
+                  className="city-dropdown"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {citySuggestions.map((city) => (
+                    <li key={city.name} onClick={() => selectCity(city)}>
+                      <span className="city-name">{city.name}</span>
+                      <span className="city-tz">{TZ_LABELS[city.timezone] || city.timezone}</span>
+                    </li>
+                  ))}
+                </motion.ul>
+              )}
+            </AnimatePresence>
+            {citySelected && (
+              <span className="input-hint" style={{ color: 'var(--ok)' }}>
+                Координаты и часовой пояс заполнены автоматически
+              </span>
+            )}
           </div>
-          <span className="input-hint">Координаты определяются автоматически по городу</span>
         </motion.div>
 
         <motion.div variants={staggerItem}>
           <label>
             Часовой пояс
-            <input
-              placeholder="Europe/Moscow"
+            <select
               value={form.timezone}
               onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-            />
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>{TZ_LABELS[tz] || tz}</option>
+              ))}
+            </select>
           </label>
         </motion.div>
+
+        {!showManualCoords && !citySelected && form.birth_place && (
+          <motion.div variants={staggerItem}>
+            <button
+              className="profile-toggle"
+              onClick={() => setShowManualCoords(true)}
+              type="button"
+            >
+              Нет моего города? Указать координаты вручную
+            </button>
+          </motion.div>
+        )}
+
+        {(showManualCoords || (!citySelected && form.latitude)) && (
+          <motion.div variants={staggerItem} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+            <div className="grid-2">
+              <label>
+                Широта
+                <input
+                  placeholder="55.7558"
+                  value={form.latitude}
+                  onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                  inputMode="decimal"
+                />
+              </label>
+              <label>
+                Долгота
+                <input
+                  placeholder="37.6173"
+                  value={form.longitude}
+                  onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                  inputMode="decimal"
+                />
+              </label>
+            </div>
+          </motion.div>
+        )}
 
         <motion.div variants={staggerItem}>
           <button className="cta" onClick={submit} disabled={loading || !canSubmit}>
