@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     tarotapi_timeout_seconds: float = 10.0
     tarot_image_base_url: str = "https://raw.githubusercontent.com/metabismuth/tarot-json/master/cards"
 
+    enable_response_localization: bool = True
+    translate_via_google_free: bool = True
+    translation_timeout_seconds: float = 8.0
+
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()
         if not raw:

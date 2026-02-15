@@ -89,3 +89,4 @@ alembic upgrade head
   - Astrology API: `astrologyapi.com` (`/western_chart_data`) via `ASTROLOGY_PROVIDER=astrologyapi`
   - Tarot text API: `tarotapi.dev` via `TAROT_PROVIDER=tarotapi_dev`
   - Tarot card images: `metabismuth/tarot-json` cards CDN (`TAROT_IMAGE_BASE_URL`)
+- API responses are auto-localized to Russian by default (`ENABLE_RESPONSE_LOCALIZATION=true`).

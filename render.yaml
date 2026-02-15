@@ -71,6 +71,12 @@ services:
         value: "10"
       - key: TAROT_IMAGE_BASE_URL
         value: https://raw.githubusercontent.com/metabismuth/tarot-json/master/cards
+      - key: ENABLE_RESPONSE_LOCALIZATION
+        value: "true"
+      - key: TRANSLATE_VIA_GOOGLE_FREE
+        value: "true"
+      - key: TRANSLATION_TIMEOUT_SECONDS
+        value: "8"
 
   - type: worker
     name: astrobot-bot
