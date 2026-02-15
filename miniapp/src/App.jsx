@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiBinaryRequest, apiRequest } from './api';
+import { apiRequest } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
@@ -442,13 +442,17 @@ function NatalChart({ onBack }) {
     setDownloading(true);
     setError('');
     try {
-      const blob = await apiBinaryRequest('/v1/reports/natal.pdf');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'natal-report.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
+      const linkPayload = await apiRequest('/v1/reports/natal-link');
+      const url = linkPayload?.url;
+      if (!url) {
+        throw new Error('Не удалось подготовить ссылку на PDF');
+      }
+
+      if (window.Telegram?.WebApp?.openLink) {
+        window.Telegram.WebApp.openLink(url);
+      } else {
+        window.open(url, '_blank');
+      }
     } catch (e) {
       setError(e.message);
     } finally {

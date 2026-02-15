@@ -171,3 +171,8 @@ class ComboInsightResponse(BaseModel):
     tarot_session_id: UUID
     tarot_cards: list[TarotCardResponse]
     combined_advice: str
+
+
+class ReportLinkResponse(BaseModel):
+    url: str
+    expires_at: datetime
