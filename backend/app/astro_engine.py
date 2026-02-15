@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from itertools import combinations
+from typing import Any
 from zoneinfo import ZoneInfo
+
+import httpx
 
 from .config import settings
 from .models import BirthProfile
@@ -38,6 +41,19 @@ PLANETS = {
     "pluto": 9,
 }
 
+PLANET_ALIASES = {
+    "sun": "sun",
+    "moon": "moon",
+    "mercury": "mercury",
+    "venus": "venus",
+    "mars": "mars",
+    "jupiter": "jupiter",
+    "saturn": "saturn",
+    "uranus": "uranus",
+    "neptune": "neptune",
+    "pluto": "pluto",
+}
+
 ASPECTS = {
     "conjunction": 0,
     "sextile": 60,
@@ -46,10 +62,27 @@ ASPECTS = {
     "opposition": 180,
 }
 
+SIGN_TRAITS = {
+    "Aries": "инициатива и прямое действие",
+    "Taurus": "устойчивость и материальная опора",
+    "Gemini": "общение и гибкость мышления",
+    "Cancer": "эмоциональная глубина и забота",
+    "Leo": "самовыражение и творческий импульс",
+    "Virgo": "структура, польза и внимание к деталям",
+    "Libra": "партнерство и поиск баланса",
+    "Scorpio": "интенсивность и трансформация",
+    "Sagittarius": "смысл, рост и расширение горизонтов",
+    "Capricorn": "дисциплина и долгосрочные цели",
+    "Aquarius": "оригинальность и идеи будущего",
+    "Pisces": "интуиция и эмпатия",
+}
+
+
 
 def _sign_from_longitude(longitude: float) -> str:
     idx = int((longitude % 360) // 30)
     return SIGNS[idx]
+
 
 
 def _calc_aspects(planet_positions: dict[str, float], orb: float = 6.0) -> list[dict]:
@@ -73,6 +106,40 @@ def _calc_aspects(planet_positions: dict[str, float], orb: float = 6.0) -> list[
     return aspects
 
 
+
+def _build_interpretation(planets: dict[str, dict], rising_sign: str, aspects: list[dict]) -> dict[str, Any]:
+    sun_sign = planets.get("sun", {}).get("sign", "Unknown")
+    moon_sign = planets.get("moon", {}).get("sign", "Unknown")
+
+    sun_theme = SIGN_TRAITS.get(sun_sign, "личная стратегия развития")
+    moon_theme = SIGN_TRAITS.get(moon_sign, "эмоциональная саморегуляция")
+    rising_theme = SIGN_TRAITS.get(rising_sign, "первое впечатление и стиль взаимодействия")
+
+    top_aspects = sorted(aspects, key=lambda item: item.get("orb", 999))[:3]
+    aspect_lines: list[str] = []
+    for item in top_aspects:
+        p1 = str(item.get("planet_1", "planet")).capitalize()
+        p2 = str(item.get("planet_2", "planet")).capitalize()
+        asp = item.get("aspect", "aspect")
+        orb = item.get("orb")
+        aspect_lines.append(f"{p1} - {p2}: {asp} (орб {orb})")
+
+    summary = (
+        f"Солнце в {sun_sign} задает вектор через {sun_theme}; "
+        f"Луна в {moon_sign} показывает эмоции через {moon_theme}; "
+        f"асцендент в {rising_sign} проявляется как {rising_theme}."
+    )
+
+    return {
+        "summary": summary,
+        "sun_explanation": f"Солнце в {sun_sign}: {sun_theme}.",
+        "moon_explanation": f"Луна в {moon_sign}: {moon_theme}.",
+        "rising_explanation": f"Асцендент в {rising_sign}: {rising_theme}.",
+        "key_aspects": aspect_lines,
+    }
+
+
+
 def _fallback_chart(profile: BirthProfile) -> dict:
     base = (
         profile.birth_date.toordinal()
@@ -91,18 +158,192 @@ def _fallback_chart(profile: BirthProfile) -> dict:
     }
 
     house_cusps = [round((base + i * 30) % 360, 5) for i in range(12)]
+    rising_sign = _sign_from_longitude(house_cusps[0])
+    aspects = _calc_aspects(planet_longitudes)
 
     return {
         "engine": "fallback",
+        "source": "internal",
         "utc_timestamp": datetime.now(timezone.utc).isoformat(),
         "planets": planet_payload,
         "houses": house_cusps,
-        "rising_sign": _sign_from_longitude(house_cusps[0]),
-        "aspects": _calc_aspects(planet_longitudes),
+        "rising_sign": rising_sign,
+        "aspects": aspects,
+        "interpretation": _build_interpretation(planet_payload, rising_sign, aspects),
     }
 
 
-def calculate_natal_chart(profile: BirthProfile) -> dict:
+
+def _pick_float(payload: dict[str, Any], keys: list[str]) -> float | None:
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            try:
+                return float(payload[key])
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+
+def _pick_text(payload: dict[str, Any], keys: list[str]) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            text = str(value).strip()
+            if text:
+                return text
+    return None
+
+
+
+def _normalize_astrologyapi(raw: dict[str, Any], utc_dt: datetime) -> dict | None:
+    planet_longitudes: dict[str, float] = {}
+    planets_payload: dict[str, dict[str, Any]] = {}
+
+    raw_planets = raw.get("planets") if isinstance(raw, dict) else None
+    if isinstance(raw_planets, list):
+        for planet in raw_planets:
+            if not isinstance(planet, dict):
+                continue
+            name_raw = _pick_text(planet, ["name", "planet", "planet_name"]) or ""
+            name = PLANET_ALIASES.get(name_raw.lower())
+            if not name:
+                continue
+
+            lon = _pick_float(planet, ["full_degree", "norm_degree", "normDegree", "longitude", "degree"])
+            if lon is None:
+                continue
+
+            sign = _pick_text(planet, ["sign", "sign_name"]) or _sign_from_longitude(lon)
+            retro = bool(planet.get("isRetro") or planet.get("retrograde") or planet.get("is_retro"))
+
+            planet_longitudes[name] = lon % 360
+            planets_payload[name] = {
+                "longitude": round(lon % 360, 6),
+                "sign": sign,
+                "retrograde": retro,
+            }
+
+    if not planets_payload:
+        return None
+
+    houses_payload: list[float] = []
+    raw_houses = raw.get("houses") if isinstance(raw, dict) else None
+    if isinstance(raw_houses, list):
+        for house in raw_houses[:12]:
+            if isinstance(house, dict):
+                deg = _pick_float(house, ["norm_degree", "normDegree", "degree", "longitude", "house_degree"])
+                if deg is None:
+                    continue
+                houses_payload.append(round(deg % 360, 6))
+            elif isinstance(house, (int, float)):
+                houses_payload.append(round(float(house) % 360, 6))
+
+    if len(houses_payload) < 12:
+        houses_payload = [round((idx * 30.0) % 360.0, 6) for idx in range(12)]
+
+    rising_sign = None
+    ascendant = raw.get("ascendant") if isinstance(raw, dict) else None
+    if isinstance(ascendant, dict):
+        rising_sign = _pick_text(ascendant, ["sign", "sign_name"])
+
+    if not rising_sign:
+        rising_sign = _sign_from_longitude(houses_payload[0])
+
+    aspects_payload: list[dict[str, Any]] = []
+    raw_aspects = raw.get("aspects") if isinstance(raw, dict) else None
+    if isinstance(raw_aspects, list):
+        for aspect in raw_aspects:
+            if not isinstance(aspect, dict):
+                continue
+            p1 = _pick_text(aspect, ["planet_1", "planet1", "first", "p1_name"])
+            p2 = _pick_text(aspect, ["planet_2", "planet2", "second", "p2_name"])
+            aspect_name = _pick_text(aspect, ["aspect", "type", "aspect_name"])
+            orb = _pick_float(aspect, ["orb", "diff", "delta"])
+            if not (p1 and p2 and aspect_name):
+                continue
+            aspects_payload.append(
+                {
+                    "planet_1": p1.lower(),
+                    "planet_2": p2.lower(),
+                    "aspect": aspect_name.lower(),
+                    "orb": round(float(orb or 0.0), 3),
+                }
+            )
+
+    if not aspects_payload:
+        aspects_payload = _calc_aspects(planet_longitudes)
+
+    normalized = {
+        "engine": "astrologyapi",
+        "source": "astrologyapi.com",
+        "utc_timestamp": utc_dt.isoformat(),
+        "planets": planets_payload,
+        "houses": houses_payload,
+        "rising_sign": rising_sign,
+        "aspects": aspects_payload,
+        "provider_raw": raw,
+    }
+    normalized["interpretation"] = _build_interpretation(
+        planets=normalized["planets"],
+        rising_sign=normalized["rising_sign"],
+        aspects=normalized["aspects"],
+    )
+    return normalized
+
+
+
+def _calculate_via_astrologyapi(profile: BirthProfile) -> dict | None:
+    user_id = settings.astrologyapi_user_id
+    api_key = settings.astrologyapi_api_key
+    if not user_id or not api_key:
+        return None
+
+    local_dt = datetime.combine(profile.birth_date, profile.birth_time, tzinfo=ZoneInfo(profile.timezone))
+    utc_dt = local_dt.astimezone(timezone.utc)
+    offset = local_dt.utcoffset()
+    tz_hours = round((offset.total_seconds() / 3600.0), 2) if offset else 0.0
+
+    payload = {
+        "day": profile.birth_date.day,
+        "month": profile.birth_date.month,
+        "year": profile.birth_date.year,
+        "hour": profile.birth_time.hour,
+        "min": profile.birth_time.minute,
+        "lat": profile.latitude,
+        "lon": profile.longitude,
+        "tzone": tz_hours,
+        "house_type": settings.astrologyapi_house_system,
+    }
+
+    base_url = settings.astrologyapi_base_url.rstrip("/")
+    url = f"{base_url}/western_chart_data"
+
+    try:
+        response = httpx.post(
+            url,
+            json=payload,
+            auth=(user_id, api_key),
+            timeout=settings.astrologyapi_timeout_seconds,
+        )
+        response.raise_for_status()
+        raw = response.json()
+    except Exception:
+        return None
+
+    if isinstance(raw, list) and raw:
+        candidate = raw[0]
+    else:
+        candidate = raw
+
+    if not isinstance(candidate, dict):
+        return None
+
+    return _normalize_astrologyapi(candidate, utc_dt)
+
+
+
+def _calculate_via_swisseph(profile: BirthProfile) -> dict:
     if swe is None:
         return _fallback_chart(profile)
 
@@ -147,13 +388,29 @@ def calculate_natal_chart(profile: BirthProfile) -> dict:
         houses = [round(float(cusp), 6) for cusp in cusps[:12]]
 
     rising_sign = _sign_from_longitude(float(ascmc[0]))
+    aspects = _calc_aspects(planet_longitudes)
 
-    return {
+    payload = {
         "engine": "swisseph",
+        "source": "internal",
         "utc_timestamp": utc_dt.isoformat(),
         "julian_day_ut": jd_ut,
         "planets": planets_payload,
         "houses": houses,
         "rising_sign": rising_sign,
-        "aspects": _calc_aspects(planet_longitudes),
+        "aspects": aspects,
     }
+    payload["interpretation"] = _build_interpretation(planets_payload, rising_sign, aspects)
+    return payload
+
+
+
+def calculate_natal_chart(profile: BirthProfile) -> dict:
+    provider = settings.astrology_provider.lower().strip()
+
+    if provider == "astrologyapi":
+        external = _calculate_via_astrologyapi(profile)
+        if external:
+            return external
+
+    return _calculate_via_swisseph(profile)

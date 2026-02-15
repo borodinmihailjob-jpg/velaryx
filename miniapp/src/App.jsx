@@ -98,14 +98,19 @@ function Onboarding({ onComplete }) {
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     birth_date: '',
-    birth_time: '',
+    birth_time: '12:00',
     birth_place: '',
     latitude: '',
     longitude: '',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   });
 
-  const canSubmit = form.birth_date && form.birth_place;
+  const canSubmit =
+    form.birth_date &&
+    form.birth_place &&
+    form.latitude &&
+    form.longitude &&
+    form.timezone;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -116,7 +121,7 @@ function Onboarding({ onComplete }) {
         method: 'POST',
         body: JSON.stringify({
           birth_date: form.birth_date,
-          birth_time: form.birth_time,
+          birth_time: form.birth_time || '12:00',
           birth_place: form.birth_place,
           latitude: Number(form.latitude),
           longitude: Number(form.longitude),
@@ -162,7 +167,7 @@ function Onboarding({ onComplete }) {
               value={form.birth_time}
               onChange={(e) => setForm({ ...form, birth_time: e.target.value })}
             />
-            <span className="input-hint">Если не знаете точно, оставьте пустым</span>
+            <span className="input-hint">Если не знаете точно, оставьте 12:00</span>
           </label>
         </motion.div>
 
@@ -229,7 +234,7 @@ function Onboarding({ onComplete }) {
 }
 
 /* ===== Dashboard ===== */
-function Dashboard({ onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboarding }) {
+function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboarding }) {
   const [compatLink, setCompatLink] = useState('');
   const [compatLoading, setCompatLoading] = useState(false);
   const [error, setError] = useState('');
@@ -254,8 +259,14 @@ function Dashboard({ onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboardi
   const menuItems = [
     {
       icon: '\u2728',
-      label: 'Моя звезда',
-      hint: 'Ежедневный прогноз и энергия',
+      label: 'Натальная карта',
+      hint: 'Полный разбор по планетам',
+      action: onOpenNatal
+    },
+    {
+      icon: '\uD83C\uDF19',
+      label: 'Ежедневный прогноз',
+      hint: 'Энергия и фокус дня',
       action: onOpenStories
     },
     {
@@ -321,6 +332,63 @@ function Dashboard({ onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboardi
       <button className="profile-toggle" onClick={onResetOnboarding}>
         Мой профиль &#x25BE;
       </button>
+    </Shell>
+  );
+}
+
+/* ===== Natal Chart ===== */
+function NatalChart({ onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [chart, setChart] = useState(null);
+
+  useEffect(() => {
+    apiRequest('/v1/natal/latest')
+      .then(setChart)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const interpretation = chart?.chart_payload?.interpretation;
+  const keyAspects = interpretation?.key_aspects || [];
+
+  return (
+    <Shell title="Натальная карта" subtitle="Ваш персональный астрологический профиль" onBack={onBack}>
+      {loading && <p className="loading-text">Собираем карту...</p>}
+      {error && <p className="error">{error}</p>}
+
+      {chart && (
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+          <motion.div className="chip-row" variants={staggerItem} style={{ justifyContent: 'center' }}>
+            <span>&#x2600; Солнце: {chart.sun_sign}</span>
+            <span>&#x263D; Луна: {chart.moon_sign}</span>
+            <span>&#x2191; Асцендент: {chart.rising_sign}</span>
+          </motion.div>
+
+          {interpretation?.summary && (
+            <motion.article className="story-card" variants={staggerItem}>
+              <p>{interpretation.summary}</p>
+            </motion.article>
+          )}
+
+          {interpretation?.sun_explanation && (
+            <motion.article className="story-card" variants={staggerItem}>
+              <p><strong>Солнце:</strong> {interpretation.sun_explanation}</p>
+              <p><strong>Луна:</strong> {interpretation.moon_explanation}</p>
+              <p><strong>Асцендент:</strong> {interpretation.rising_explanation}</p>
+            </motion.article>
+          )}
+
+          {keyAspects.length > 0 && (
+            <motion.article className="story-card" variants={staggerItem}>
+              <p className="section-title">Ключевые аспекты</p>
+              {keyAspects.map((line, idx) => (
+                <p key={idx} style={{ marginTop: idx ? 6 : 0 }}>{line}</p>
+              ))}
+            </motion.article>
+          )}
+        </motion.div>
+      )}
     </Shell>
   );
 }
@@ -432,6 +500,16 @@ function Tarot({ onBack }) {
               className="tarot-card"
               variants={staggerItem}
             >
+              {card.image_url && (
+                <div className="tarot-image-frame">
+                  <img
+                    src={card.image_url}
+                    alt={card.card_name}
+                    className={`tarot-image ${card.is_reversed ? 'reversed' : ''}`}
+                    loading="lazy"
+                  />
+                </div>
+              )}
               <span className="tarot-position">{card.slot_label}</span>
               <span className="tarot-name">{card.card_name}</span>
               <span className={`tarot-orientation ${card.is_reversed ? 'reversed' : 'upright'}`}>
@@ -741,6 +819,10 @@ export default function App() {
     return <Stories onBack={() => setView('dashboard')} />;
   }
 
+  if (view === 'natal') {
+    return <NatalChart onBack={() => setView('dashboard')} />;
+  }
+
   if (view === 'tarot') {
     return <Tarot onBack={() => setView('dashboard')} />;
   }
@@ -751,6 +833,7 @@ export default function App() {
 
   return (
     <Dashboard
+      onOpenNatal={() => setView('natal')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
       onOpenWishlist={() => setView('wishlist-local')}

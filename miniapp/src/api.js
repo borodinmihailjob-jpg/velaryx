@@ -63,7 +63,20 @@ export async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || `Request failed: ${response.status}`);
+    let detail = payload?.detail;
+    if (Array.isArray(detail)) {
+      detail = detail
+        .map((item) => {
+          const msg = item?.msg || item?.message;
+          const loc = Array.isArray(item?.loc) ? item.loc.join('.') : '';
+          return loc ? `${loc}: ${msg}` : msg;
+        })
+        .filter(Boolean)
+        .join('; ');
+    } else if (typeof detail === 'object' && detail !== null) {
+      detail = detail.message || JSON.stringify(detail);
+    }
+    throw new Error(detail || `Request failed: ${response.status}`);
   }
 
   return response.json();

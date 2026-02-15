@@ -53,6 +53,9 @@ alembic upgrade head
 - `CORS_ORIGINS_RAW` (include miniapp public URL)
 - `VITE_API_BASE_URL` (public URL of `astrobot-api`)
 - `VITE_BOT_USERNAME`
+- Optional external engines:
+- `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`
+- `TAROT_PROVIDER=tarotapi_dev`
 4. Keep production security flags:
 - `REQUIRE_TELEGRAM_INIT_DATA=true`
 - `ALLOW_INSECURE_DEV_AUTH=false`
@@ -82,3 +85,7 @@ alembic upgrade head
 ## Notes
 - Astrology engine uses Swiss Ephemeris (`pyswisseph`) with fallback mode if ephemeris files are unavailable.
 - Tarot deck data is stored in `backend/app/assets/tarot_deck.json`.
+- External providers integrated:
+  - Astrology API: `astrologyapi.com` (`/western_chart_data`) via `ASTROLOGY_PROVIDER=astrologyapi`
+  - Tarot text API: `tarotapi.dev` via `TAROT_PROVIDER=tarotapi_dev`
+  - Tarot card images: `metabismuth/tarot-json` cards CDN (`TAROT_IMAGE_BASE_URL`)

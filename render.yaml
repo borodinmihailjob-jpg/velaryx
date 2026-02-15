@@ -51,6 +51,26 @@ services:
         value: "900"
       - key: CORS_ORIGINS_RAW
         sync: false
+      - key: ASTROLOGY_PROVIDER
+        value: swisseph
+      - key: ASTROLOGYAPI_BASE_URL
+        value: https://json.astrologyapi.com/v1
+      - key: ASTROLOGYAPI_USER_ID
+        sync: false
+      - key: ASTROLOGYAPI_API_KEY
+        sync: false
+      - key: ASTROLOGYAPI_HOUSE_SYSTEM
+        value: placidus
+      - key: ASTROLOGYAPI_TIMEOUT_SECONDS
+        value: "15"
+      - key: TAROT_PROVIDER
+        value: tarotapi_dev
+      - key: TAROTAPI_BASE_URL
+        value: https://tarotapi.dev/api/v1
+      - key: TAROTAPI_TIMEOUT_SECONDS
+        value: "10"
+      - key: TAROT_IMAGE_BASE_URL
+        value: https://raw.githubusercontent.com/metabismuth/tarot-json/master/cards
 
   - type: worker
     name: astrobot-bot

@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, services
+from ..config import settings
 from ..database import get_db
 from ..dependencies import current_user_dep
+from ..tarot_engine import card_image_url
 
 router = APIRouter(prefix="/v1/tarot", tags=["tarot"])
 
@@ -36,6 +38,8 @@ def draw_tarot(
                 card_name=card.card_name,
                 is_reversed=card.is_reversed,
                 meaning=card.meaning,
+                image_url=card_image_url(card.card_name),
+                provider=settings.tarot_provider,
             )
             for card in sorted(cards, key=lambda c: c.position)
         ],
@@ -61,6 +65,8 @@ def get_tarot_session(
                 card_name=card.card_name,
                 is_reversed=card.is_reversed,
                 meaning=card.meaning,
+                image_url=card_image_url(card.card_name),
+                provider=settings.tarot_provider,
             )
             for card in sorted(session.cards, key=lambda c: c.position)
         ],

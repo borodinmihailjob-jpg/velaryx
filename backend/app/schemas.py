@@ -122,6 +122,8 @@ class TarotCardResponse(BaseModel):
     card_name: str
     is_reversed: bool
     meaning: str
+    image_url: str | None = None
+    provider: str | None = None
 
 
 class TarotSessionResponse(BaseModel):

@@ -483,6 +483,26 @@ button:disabled {
   overflow: hidden;
 }
 
+.tarot-image-frame {
+  width: 100%;
+  aspect-ratio: 7 / 12;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tarot-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tarot-image.reversed {
+  transform: rotate(180deg);
+}
+
 .tarot-card::before {
   content: '';
   position: absolute;
