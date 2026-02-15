@@ -1,0 +1,392 @@
+[
+  {
+    "name": "The Fool",
+    "upright": "new beginnings and trust",
+    "reversed": "impulsiveness and naivety"
+  },
+  {
+    "name": "The Magician",
+    "upright": "focus and manifestation",
+    "reversed": "manipulation and scattered focus"
+  },
+  {
+    "name": "The High Priestess",
+    "upright": "intuition and inner voice",
+    "reversed": "secrets and emotional distance"
+  },
+  {
+    "name": "The Empress",
+    "upright": "abundance and care",
+    "reversed": "overprotection and stagnation"
+  },
+  {
+    "name": "The Emperor",
+    "upright": "structure and leadership",
+    "reversed": "rigidity and control"
+  },
+  {
+    "name": "The Hierophant",
+    "upright": "tradition and guidance",
+    "reversed": "dogma and conformity pressure"
+  },
+  {
+    "name": "The Lovers",
+    "upright": "choice and alignment",
+    "reversed": "indecision and mixed values"
+  },
+  {
+    "name": "The Chariot",
+    "upright": "discipline and victory",
+    "reversed": "conflict and loss of direction"
+  },
+  {
+    "name": "Strength",
+    "upright": "courage and compassion",
+    "reversed": "self-doubt and reactivity"
+  },
+  {
+    "name": "The Hermit",
+    "upright": "reflection and wisdom",
+    "reversed": "isolation and avoidance"
+  },
+  {
+    "name": "Wheel of Fortune",
+    "upright": "turning point and momentum",
+    "reversed": "instability and resistance to change"
+  },
+  {
+    "name": "Justice",
+    "upright": "clarity and fairness",
+    "reversed": "bias and unresolved accountability"
+  },
+  {
+    "name": "The Hanged Man",
+    "upright": "new perspective and surrender",
+    "reversed": "delay and martyrdom"
+  },
+  {
+    "name": "Death",
+    "upright": "transformation and release",
+    "reversed": "fear of endings"
+  },
+  {
+    "name": "Temperance",
+    "upright": "balance and healing",
+    "reversed": "imbalance and excess"
+  },
+  {
+    "name": "The Devil",
+    "upright": "desire and shadow work",
+    "reversed": "attachment and unhealthy cycles"
+  },
+  {
+    "name": "The Tower",
+    "upright": "breakthrough through disruption",
+    "reversed": "chaos and denial"
+  },
+  {
+    "name": "The Star",
+    "upright": "hope and renewal",
+    "reversed": "discouragement and disconnection"
+  },
+  {
+    "name": "The Moon",
+    "upright": "intuition and mystery",
+    "reversed": "confusion and anxiety"
+  },
+  {
+    "name": "The Sun",
+    "upright": "joy and vitality",
+    "reversed": "ego burn-out and overexposure"
+  },
+  {
+    "name": "Judgement",
+    "upright": "calling and awakening",
+    "reversed": "self-criticism and hesitation"
+  },
+  {
+    "name": "The World",
+    "upright": "completion and integration",
+    "reversed": "unfinished lessons"
+  },
+  {
+    "name": "Ace of Wands",
+    "upright": "initiative and action; practical message of ace of wands",
+    "reversed": "haste and burnout; blocked lesson of ace of wands"
+  },
+  {
+    "name": "Two of Wands",
+    "upright": "initiative and action; practical message of two of wands",
+    "reversed": "haste and burnout; blocked lesson of two of wands"
+  },
+  {
+    "name": "Three of Wands",
+    "upright": "initiative and action; practical message of three of wands",
+    "reversed": "haste and burnout; blocked lesson of three of wands"
+  },
+  {
+    "name": "Four of Wands",
+    "upright": "initiative and action; practical message of four of wands",
+    "reversed": "haste and burnout; blocked lesson of four of wands"
+  },
+  {
+    "name": "Five of Wands",
+    "upright": "initiative and action; practical message of five of wands",
+    "reversed": "haste and burnout; blocked lesson of five of wands"
+  },
+  {
+    "name": "Six of Wands",
+    "upright": "initiative and action; practical message of six of wands",
+    "reversed": "haste and burnout; blocked lesson of six of wands"
+  },
+  {
+    "name": "Seven of Wands",
+    "upright": "initiative and action; practical message of seven of wands",
+    "reversed": "haste and burnout; blocked lesson of seven of wands"
+  },
+  {
+    "name": "Eight of Wands",
+    "upright": "initiative and action; practical message of eight of wands",
+    "reversed": "haste and burnout; blocked lesson of eight of wands"
+  },
+  {
+    "name": "Nine of Wands",
+    "upright": "initiative and action; practical message of nine of wands",
+    "reversed": "haste and burnout; blocked lesson of nine of wands"
+  },
+  {
+    "name": "Ten of Wands",
+    "upright": "initiative and action; practical message of ten of wands",
+    "reversed": "haste and burnout; blocked lesson of ten of wands"
+  },
+  {
+    "name": "Page of Wands",
+    "upright": "initiative and action; practical message of page of wands",
+    "reversed": "haste and burnout; blocked lesson of page of wands"
+  },
+  {
+    "name": "Knight of Wands",
+    "upright": "initiative and action; practical message of knight of wands",
+    "reversed": "haste and burnout; blocked lesson of knight of wands"
+  },
+  {
+    "name": "Queen of Wands",
+    "upright": "initiative and action; practical message of queen of wands",
+    "reversed": "haste and burnout; blocked lesson of queen of wands"
+  },
+  {
+    "name": "King of Wands",
+    "upright": "initiative and action; practical message of king of wands",
+    "reversed": "haste and burnout; blocked lesson of king of wands"
+  },
+  {
+    "name": "Ace of Cups",
+    "upright": "emotion and connection; practical message of ace of cups",
+    "reversed": "emotional overwhelm; blocked lesson of ace of cups"
+  },
+  {
+    "name": "Two of Cups",
+    "upright": "emotion and connection; practical message of two of cups",
+    "reversed": "emotional overwhelm; blocked lesson of two of cups"
+  },
+  {
+    "name": "Three of Cups",
+    "upright": "emotion and connection; practical message of three of cups",
+    "reversed": "emotional overwhelm; blocked lesson of three of cups"
+  },
+  {
+    "name": "Four of Cups",
+    "upright": "emotion and connection; practical message of four of cups",
+    "reversed": "emotional overwhelm; blocked lesson of four of cups"
+  },
+  {
+    "name": "Five of Cups",
+    "upright": "emotion and connection; practical message of five of cups",
+    "reversed": "emotional overwhelm; blocked lesson of five of cups"
+  },
+  {
+    "name": "Six of Cups",
+    "upright": "emotion and connection; practical message of six of cups",
+    "reversed": "emotional overwhelm; blocked lesson of six of cups"
+  },
+  {
+    "name": "Seven of Cups",
+    "upright": "emotion and connection; practical message of seven of cups",
+    "reversed": "emotional overwhelm; blocked lesson of seven of cups"
+  },
+  {
+    "name": "Eight of Cups",
+    "upright": "emotion and connection; practical message of eight of cups",
+    "reversed": "emotional overwhelm; blocked lesson of eight of cups"
+  },
+  {
+    "name": "Nine of Cups",
+    "upright": "emotion and connection; practical message of nine of cups",
+    "reversed": "emotional overwhelm; blocked lesson of nine of cups"
+  },
+  {
+    "name": "Ten of Cups",
+    "upright": "emotion and connection; practical message of ten of cups",
+    "reversed": "emotional overwhelm; blocked lesson of ten of cups"
+  },
+  {
+    "name": "Page of Cups",
+    "upright": "emotion and connection; practical message of page of cups",
+    "reversed": "emotional overwhelm; blocked lesson of page of cups"
+  },
+  {
+    "name": "Knight of Cups",
+    "upright": "emotion and connection; practical message of knight of cups",
+    "reversed": "emotional overwhelm; blocked lesson of knight of cups"
+  },
+  {
+    "name": "Queen of Cups",
+    "upright": "emotion and connection; practical message of queen of cups",
+    "reversed": "emotional overwhelm; blocked lesson of queen of cups"
+  },
+  {
+    "name": "King of Cups",
+    "upright": "emotion and connection; practical message of king of cups",
+    "reversed": "emotional overwhelm; blocked lesson of king of cups"
+  },
+  {
+    "name": "Ace of Swords",
+    "upright": "mind and truth; practical message of ace of swords",
+    "reversed": "conflict and overthinking; blocked lesson of ace of swords"
+  },
+  {
+    "name": "Two of Swords",
+    "upright": "mind and truth; practical message of two of swords",
+    "reversed": "conflict and overthinking; blocked lesson of two of swords"
+  },
+  {
+    "name": "Three of Swords",
+    "upright": "mind and truth; practical message of three of swords",
+    "reversed": "conflict and overthinking; blocked lesson of three of swords"
+  },
+  {
+    "name": "Four of Swords",
+    "upright": "mind and truth; practical message of four of swords",
+    "reversed": "conflict and overthinking; blocked lesson of four of swords"
+  },
+  {
+    "name": "Five of Swords",
+    "upright": "mind and truth; practical message of five of swords",
+    "reversed": "conflict and overthinking; blocked lesson of five of swords"
+  },
+  {
+    "name": "Six of Swords",
+    "upright": "mind and truth; practical message of six of swords",
+    "reversed": "conflict and overthinking; blocked lesson of six of swords"
+  },
+  {
+    "name": "Seven of Swords",
+    "upright": "mind and truth; practical message of seven of swords",
+    "reversed": "conflict and overthinking; blocked lesson of seven of swords"
+  },
+  {
+    "name": "Eight of Swords",
+    "upright": "mind and truth; practical message of eight of swords",
+    "reversed": "conflict and overthinking; blocked lesson of eight of swords"
+  },
+  {
+    "name": "Nine of Swords",
+    "upright": "mind and truth; practical message of nine of swords",
+    "reversed": "conflict and overthinking; blocked lesson of nine of swords"
+  },
+  {
+    "name": "Ten of Swords",
+    "upright": "mind and truth; practical message of ten of swords",
+    "reversed": "conflict and overthinking; blocked lesson of ten of swords"
+  },
+  {
+    "name": "Page of Swords",
+    "upright": "mind and truth; practical message of page of swords",
+    "reversed": "conflict and overthinking; blocked lesson of page of swords"
+  },
+  {
+    "name": "Knight of Swords",
+    "upright": "mind and truth; practical message of knight of swords",
+    "reversed": "conflict and overthinking; blocked lesson of knight of swords"
+  },
+  {
+    "name": "Queen of Swords",
+    "upright": "mind and truth; practical message of queen of swords",
+    "reversed": "conflict and overthinking; blocked lesson of queen of swords"
+  },
+  {
+    "name": "King of Swords",
+    "upright": "mind and truth; practical message of king of swords",
+    "reversed": "conflict and overthinking; blocked lesson of king of swords"
+  },
+  {
+    "name": "Ace of Pentacles",
+    "upright": "resources and stability; practical message of ace of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of ace of pentacles"
+  },
+  {
+    "name": "Two of Pentacles",
+    "upright": "resources and stability; practical message of two of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of two of pentacles"
+  },
+  {
+    "name": "Three of Pentacles",
+    "upright": "resources and stability; practical message of three of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of three of pentacles"
+  },
+  {
+    "name": "Four of Pentacles",
+    "upright": "resources and stability; practical message of four of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of four of pentacles"
+  },
+  {
+    "name": "Five of Pentacles",
+    "upright": "resources and stability; practical message of five of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of five of pentacles"
+  },
+  {
+    "name": "Six of Pentacles",
+    "upright": "resources and stability; practical message of six of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of six of pentacles"
+  },
+  {
+    "name": "Seven of Pentacles",
+    "upright": "resources and stability; practical message of seven of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of seven of pentacles"
+  },
+  {
+    "name": "Eight of Pentacles",
+    "upright": "resources and stability; practical message of eight of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of eight of pentacles"
+  },
+  {
+    "name": "Nine of Pentacles",
+    "upright": "resources and stability; practical message of nine of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of nine of pentacles"
+  },
+  {
+    "name": "Ten of Pentacles",
+    "upright": "resources and stability; practical message of ten of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of ten of pentacles"
+  },
+  {
+    "name": "Page of Pentacles",
+    "upright": "resources and stability; practical message of page of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of page of pentacles"
+  },
+  {
+    "name": "Knight of Pentacles",
+    "upright": "resources and stability; practical message of knight of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of knight of pentacles"
+  },
+  {
+    "name": "Queen of Pentacles",
+    "upright": "resources and stability; practical message of queen of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of queen of pentacles"
+  },
+  {
+    "name": "King of Pentacles",
+    "upright": "resources and stability; practical message of king of pentacles",
+    "reversed": "insecurity and material stress; blocked lesson of king of pentacles"
+  }
+]

@@ -1,0 +1,97 @@
+databases:
+  - name: astrobot-postgres
+    databaseName: astrobot
+    user: astrobot
+    plan: starter
+
+services:
+  - type: keyvalue
+    name: astrobot-redis
+    plan: starter
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
+
+  - type: web
+    name: astrobot-api
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: astrobot-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: astrobot-redis
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: MINI_APP_NAME
+        value: app
+      - key: MINI_APP_PUBLIC_BASE_URL
+        sync: false
+      - key: REQUIRE_TELEGRAM_INIT_DATA
+        value: "true"
+      - key: ALLOW_INSECURE_DEV_AUTH
+        value: "false"
+      - key: TELEGRAM_INIT_DATA_MAX_AGE_SECONDS
+        value: "900"
+      - key: CORS_ORIGINS_RAW
+        sync: false
+
+  - type: worker
+    name: astrobot-bot
+    runtime: python
+    plan: starter
+    rootDir: bot
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: MINI_APP_NAME
+        value: app
+      - key: API_HOST
+        fromService:
+          type: web
+          name: astrobot-api
+          property: host
+      - key: API_PORT
+        fromService:
+          type: web
+          name: astrobot-api
+          property: port
+
+  - type: web
+    name: astrobot-miniapp
+    runtime: static
+    plan: starter
+    rootDir: miniapp
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+      - key: VITE_BOT_USERNAME
+        sync: false
+      - key: VITE_APP_NAME
+        value: app
