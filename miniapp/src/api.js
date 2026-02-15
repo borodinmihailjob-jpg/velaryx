@@ -1,7 +1,38 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+function readInitDataFromUrl() {
+  try {
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+    const fromHash = hashParams.get('tgWebAppData');
+    if (fromHash) {
+      return decodeURIComponent(fromHash);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const fromSearch = searchParams.get('tgWebAppData');
+    if (fromSearch) {
+      return decodeURIComponent(fromSearch);
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
 export function getTelegramInitData() {
-  return window.Telegram?.WebApp?.initData || null;
+  const fromWebApp = window.Telegram?.WebApp?.initData;
+  if (fromWebApp) {
+    return fromWebApp;
+  }
+  return readInitDataFromUrl();
 }
 
 export function resolveTgUserId() {
