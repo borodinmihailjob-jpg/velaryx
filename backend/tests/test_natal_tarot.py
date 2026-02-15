@@ -22,12 +22,26 @@ def test_natal_forecast_tarot_flow(client):
     assert chart_resp.status_code == 200
     assert chart_resp.json()["sun_sign"]
 
+    full_natal_resp = client.get(
+        "/v1/natal/full",
+        headers={"X-TG-USER-ID": "401"},
+    )
+    assert full_natal_resp.status_code == 200
+    assert isinstance(full_natal_resp.json()["interpretation_sections"], list)
+
     forecast_resp = client.get(
         "/v1/forecast/daily",
         headers={"X-TG-USER-ID": "401"},
     )
     assert forecast_resp.status_code == 200
     assert 0 < forecast_resp.json()["energy_score"] <= 100
+
+    stories_resp = client.get(
+        "/v1/forecast/stories",
+        headers={"X-TG-USER-ID": "401"},
+    )
+    assert stories_resp.status_code == 200
+    assert len(stories_resp.json()["slides"]) >= 2
 
     tarot_resp = client.post(
         "/v1/tarot/draw",
@@ -36,3 +50,18 @@ def test_natal_forecast_tarot_flow(client):
     )
     assert tarot_resp.status_code == 200
     assert len(tarot_resp.json()["cards"]) == 3
+
+    combo_resp = client.post(
+        "/v1/insights/astro-tarot",
+        headers={"X-TG-USER-ID": "401"},
+        json={"spread_type": "three_card", "question": "Main decision this week?"},
+    )
+    assert combo_resp.status_code == 200
+    assert combo_resp.json()["tarot_cards"]
+
+    report_resp = client.get(
+        "/v1/reports/natal.pdf",
+        headers={"X-TG-USER-ID": "401"},
+    )
+    assert report_resp.status_code == 200
+    assert report_resp.headers["content-type"].startswith("application/pdf")

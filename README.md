@@ -1,6 +1,6 @@
 # AstroBot Monorepo
 
-Telegram bot + Mini App for astrology, tarot, compatibility deep-links, and wishlist sharing.
+Telegram bot + Mini App for astrology, tarot, compatibility deep-links, combo insights, and PDF reports.
 
 ## Stack
 - `backend`: FastAPI + SQLAlchemy + Alembic + PostgreSQL + Redis
@@ -9,12 +9,13 @@ Telegram bot + Mini App for astrology, tarot, compatibility deep-links, and wish
 - Deploy target: Render (`render.yaml` included)
 
 ## Implemented Features
-- Natal profile + natal calculation endpoints (`/v1/natal/*`)
-- Daily forecast endpoint (`/v1/forecast/daily`)
+- Natal profile + full natal map (`/v1/natal/*`)
+- Daily forecast + stories mode (`/v1/forecast/*`)
 - Tarot spreads endpoint (`/v1/tarot/*`)
 - Compatibility invite/start flow with deep-links (`comp_*`)
-- Wishlist public sharing + reservation flow (`wl_*`)
-- Telegram Mini App `startapp` routing
+- Combo endpoint (astrology + tarot) (`/v1/insights/astro-tarot`)
+- PDF report endpoint (`/v1/reports/natal.pdf`)
+- Telegram Mini App `startapp` routing (`sc_*`, `comp_*`)
 - Telegram `initData` signature validation on backend
 
 ## Local Development
@@ -65,22 +66,25 @@ alembic upgrade head
 2. Set Mini App button in bot menu for `https://t.me/<BOT_USERNAME>/app`.
 3. Ensure Mini App opens with deep links:
 - `https://t.me/<BOT_USERNAME>/app?startapp=comp_<token>`
-- `https://t.me/<BOT_USERNAME>/app?startapp=wl_<token>`
+- `https://t.me/<BOT_USERNAME>/app?startapp=sc_natal`
+- `https://t.me/<BOT_USERNAME>/app?startapp=sc_stories`
+- `https://t.me/<BOT_USERNAME>/app?startapp=sc_tarot`
+- `https://t.me/<BOT_USERNAME>/app?startapp=sc_combo`
 4. For secure operations, Mini App sends `X-Telegram-Init-Data` header.
 
 ## API Summary
 - `POST /v1/natal/profile`
 - `POST /v1/natal/calculate`
 - `GET /v1/natal/latest`
+- `GET /v1/natal/full`
 - `GET /v1/forecast/daily`
+- `GET /v1/forecast/stories`
 - `POST /v1/tarot/draw`
 - `GET /v1/tarot/{session_id}`
+- `POST /v1/insights/astro-tarot`
+- `GET /v1/reports/natal.pdf`
 - `POST /v1/compat/invites`
 - `POST /v1/compat/start`
-- `POST /v1/wishlists`
-- `POST /v1/wishlists/{wishlist_id}/items`
-- `GET /v1/public/wishlists/{public_token}`
-- `POST /v1/public/wishlists/{public_token}/items/{item_id}/reserve`
 
 ## Notes
 - Astrology engine uses Swiss Ephemeris (`pyswisseph`) with fallback mode if ephemeris files are unavailable.

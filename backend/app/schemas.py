@@ -22,6 +22,8 @@ class CompatStartResponse(BaseModel):
     session_id: UUID
     score: int
     summary: str
+    strengths: list[str] = Field(default_factory=list)
+    growth_areas: list[str] = Field(default_factory=list)
 
 
 class WishlistCreateRequest(BaseModel):
@@ -104,11 +106,39 @@ class NatalChartResponse(BaseModel):
     created_at: datetime
 
 
+class NatalFullResponse(BaseModel):
+    id: UUID
+    profile_id: UUID
+    sun_sign: str
+    moon_sign: str
+    rising_sign: str
+    chart_payload: dict
+    interpretation_sections: list[dict]
+    wheel_chart_url: str | None = None
+    created_at: datetime
+
+
 class ForecastDailyResponse(BaseModel):
     date: date
     energy_score: int
     summary: str
     payload: dict
+
+
+class ForecastStorySlide(BaseModel):
+    title: str
+    body: str
+    badge: str | None = None
+
+
+class ForecastStoriesResponse(BaseModel):
+    date: date
+    slides: list[ForecastStorySlide]
+
+
+class ComboInsightRequest(BaseModel):
+    question: str | None = Field(default=None, max_length=500)
+    spread_type: str = Field(default="three_card")
 
 
 class TarotDrawRequest(BaseModel):
@@ -132,3 +162,12 @@ class TarotSessionResponse(BaseModel):
     question: str | None
     created_at: datetime
     cards: list[TarotCardResponse]
+
+
+class ComboInsightResponse(BaseModel):
+    question: str | None
+    natal_summary: str
+    daily_summary: str
+    tarot_session_id: UUID
+    tarot_cards: list[TarotCardResponse]
+    combined_advice: str

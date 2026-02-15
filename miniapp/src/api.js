@@ -43,7 +43,7 @@ export function resolveTgUserId() {
   return localStorage.getItem('dev_tg_user_id') || '999001';
 }
 
-export async function apiRequest(path, options = {}) {
+function buildHeaders(options = {}) {
   const initData = getTelegramInitData();
   const headers = {
     'Content-Type': 'application/json',
@@ -55,6 +55,46 @@ export async function apiRequest(path, options = {}) {
   } else {
     headers['X-TG-USER-ID'] = resolveTgUserId();
   }
+  return headers;
+}
+
+async function throwResponseError(response) {
+  const payload = await response.json().catch(() => ({}));
+  let detail = payload?.detail;
+  if (Array.isArray(detail)) {
+    detail = detail
+      .map((item) => {
+        const msg = item?.msg || item?.message;
+        const loc = Array.isArray(item?.loc) ? item.loc.join('.') : '';
+        return loc ? `${loc}: ${msg}` : msg;
+      })
+      .filter(Boolean)
+      .join('; ');
+  } else if (typeof detail === 'object' && detail !== null) {
+    detail = detail.message || JSON.stringify(detail);
+  }
+  throw new Error(detail || `Request failed: ${response.status}`);
+}
+
+export async function apiRequest(path, options = {}) {
+  const headers = buildHeaders(options);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers
+  });
+
+  if (!response.ok) {
+    await throwResponseError(response);
+  }
+
+  return response.json();
+}
+
+export async function apiBinaryRequest(path, options = {}) {
+  const headers = buildHeaders(options);
+  if (headers['Content-Type']) {
+    delete headers['Content-Type'];
+  }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -62,22 +102,8 @@ export async function apiRequest(path, options = {}) {
   });
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    let detail = payload?.detail;
-    if (Array.isArray(detail)) {
-      detail = detail
-        .map((item) => {
-          const msg = item?.msg || item?.message;
-          const loc = Array.isArray(item?.loc) ? item.loc.join('.') : '';
-          return loc ? `${loc}: ${msg}` : msg;
-        })
-        .filter(Boolean)
-        .join('; ');
-    } else if (typeof detail === 'object' && detail !== null) {
-      detail = detail.message || JSON.stringify(detail);
-    }
-    throw new Error(detail || `Request failed: ${response.status}`);
+    await throwResponseError(response);
   }
 
-  return response.json();
+  return response.blob();
 }

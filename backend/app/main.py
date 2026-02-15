@@ -8,7 +8,7 @@ from starlette.responses import Response
 
 from .config import settings
 from .localization import localize_json_bytes
-from .routers import compat, forecast, health, natal, tarot, wishlist
+from .routers import compat, forecast, health, insights, natal, reports, tarot
 try:
     from .routers import geo
 except ImportError:  # pragma: no cover
@@ -75,4 +75,5 @@ app.include_router(natal.router)
 app.include_router(forecast.router)
 app.include_router(tarot.router)
 app.include_router(compat.router)
-app.include_router(wishlist.router)
+app.include_router(insights.router)
+app.include_router(reports.router)

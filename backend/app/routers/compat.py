@@ -35,8 +35,11 @@ def start_compat(
         invite_token=payload.invite_token,
         invitee_user_id=user.id,
     )
+    payload_data = result.payload if isinstance(result.payload, dict) else {}
     return schemas.CompatStartResponse(
         session_id=session.id,
         score=result.score,
         summary=result.summary,
+        strengths=[str(item) for item in payload_data.get("strengths", []) if str(item).strip()],
+        growth_areas=[str(item) for item in payload_data.get("growth_areas", []) if str(item).strip()],
     )

@@ -1,11 +1,56 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiRequest } from './api';
+import { apiBinaryRequest, apiRequest } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
+
+const pageVariants = {
+  initial: { opacity: 0, y: 20, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
+  exit: { opacity: 0, y: -10, transition: { duration: 0.2 } }
+};
+
+const staggerContainer = { animate: { transition: { staggerChildren: 0.06 } } };
+const staggerItem = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } }
+};
+
+const TIMEZONES = [
+  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Asia/Yekaterinburg',
+  'Asia/Omsk', 'Asia/Krasnoyarsk', 'Asia/Irkutsk', 'Asia/Yakutsk',
+  'Asia/Vladivostok', 'Asia/Magadan', 'Asia/Kamchatka',
+  'Europe/Minsk', 'Europe/Kiev', 'Asia/Almaty', 'Asia/Tashkent',
+  'Asia/Baku', 'Asia/Tbilisi', 'Asia/Yerevan', 'Asia/Bishkek',
+  'Europe/Chisinau', 'UTC'
+];
+
+const TZ_LABELS = {
+  'Europe/Moscow': 'Москва (UTC+3)',
+  'Europe/Kaliningrad': 'Калининград (UTC+2)',
+  'Europe/Samara': 'Самара (UTC+4)',
+  'Asia/Yekaterinburg': 'Екатеринбург (UTC+5)',
+  'Asia/Omsk': 'Омск (UTC+6)',
+  'Asia/Krasnoyarsk': 'Красноярск (UTC+7)',
+  'Asia/Irkutsk': 'Иркутск (UTC+8)',
+  'Asia/Yakutsk': 'Якутск (UTC+9)',
+  'Asia/Vladivostok': 'Владивосток (UTC+10)',
+  'Asia/Magadan': 'Магадан (UTC+11)',
+  'Asia/Kamchatka': 'Камчатка (UTC+12)',
+  'Europe/Minsk': 'Минск (UTC+3)',
+  'Europe/Kiev': 'Киев (UTC+2)',
+  'Asia/Almaty': 'Алматы (UTC+6)',
+  'Asia/Tashkent': 'Ташкент (UTC+5)',
+  'Asia/Baku': 'Баку (UTC+4)',
+  'Asia/Tbilisi': 'Тбилиси (UTC+4)',
+  'Asia/Yerevan': 'Ереван (UTC+4)',
+  'Asia/Bishkek': 'Бишкек (UTC+6)',
+  'Europe/Chisinau': 'Кишинёв (UTC+2)',
+  'UTC': 'UTC'
+};
 
 function buildStartAppLink(token) {
   return `https://t.me/${BOT_USERNAME}/${APP_NAME}?startapp=${token}`;
@@ -34,7 +79,19 @@ function useStartParam() {
   return sdkStartParam || fromUnsafe || fromQuery || null;
 }
 
-/* ===== Hint Tooltip ===== */
+function startParamToView(startParam) {
+  if (!startParam) return null;
+  if (startParam.startsWith('comp_')) return 'compat';
+  const mapping = {
+    sc_onboarding: 'onboarding',
+    sc_natal: 'natal',
+    sc_stories: 'stories',
+    sc_tarot: 'tarot',
+    sc_combo: 'combo'
+  };
+  return mapping[startParam] || null;
+}
+
 function Hint({ text }) {
   const [show, setShow] = useState(false);
   return (
@@ -50,32 +107,9 @@ function Hint({ text }) {
   );
 }
 
-/* ===== Page transitions ===== */
-const pageVariants = {
-  initial: { opacity: 0, y: 20, scale: 0.98 },
-  animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
-  exit: { opacity: 0, y: -10, transition: { duration: 0.2 } }
-};
-
-const staggerContainer = {
-  animate: { transition: { staggerChildren: 0.06 } }
-};
-
-const staggerItem = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } }
-};
-
-/* ===== Shell ===== */
 function Shell({ title, subtitle, children, onBack }) {
   return (
-    <motion.main
-      className="screen"
-      variants={pageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-    >
+    <motion.main className="screen" variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <header className="screen-head">
         <div>
           {onBack && (
@@ -92,41 +126,6 @@ function Shell({ title, subtitle, children, onBack }) {
   );
 }
 
-/* ===== Timezone list ===== */
-const TIMEZONES = [
-  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Asia/Yekaterinburg',
-  'Asia/Omsk', 'Asia/Krasnoyarsk', 'Asia/Irkutsk', 'Asia/Yakutsk',
-  'Asia/Vladivostok', 'Asia/Magadan', 'Asia/Kamchatka',
-  'Europe/Minsk', 'Europe/Kiev', 'Asia/Almaty', 'Asia/Tashkent',
-  'Asia/Baku', 'Asia/Tbilisi', 'Asia/Yerevan', 'Asia/Bishkek',
-  'Europe/Chisinau', 'UTC',
-];
-
-const TZ_LABELS = {
-  'Europe/Moscow': 'Москва (UTC+3)',
-  'Europe/Kaliningrad': 'Калининград (UTC+2)',
-  'Europe/Samara': 'Самара (UTC+4)',
-  'Asia/Yekaterinburg': 'Екатеринбург (UTC+5)',
-  'Asia/Omsk': 'Омск (UTC+6)',
-  'Asia/Krasnoyarsk': 'Красноярск (UTC+7)',
-  'Asia/Irkutsk': 'Иркутск (UTC+8)',
-  'Asia/Yakutsk': 'Якутск (UTC+9)',
-  'Asia/Vladivostok': 'Владивосток (UTC+10)',
-  'Asia/Magadan': 'Магадан (UTC+11)',
-  'Asia/Kamchatka': 'Камчатка (UTC+12)',
-  'Europe/Minsk': 'Минск (UTC+3)',
-  'Europe/Kiev': 'Киев (UTC+2)',
-  'Asia/Almaty': 'Алматы (UTC+6)',
-  'Asia/Tashkent': 'Ташкент (UTC+5)',
-  'Asia/Baku': 'Баку (UTC+4)',
-  'Asia/Tbilisi': 'Тбилиси (UTC+4)',
-  'Asia/Yerevan': 'Ереван (UTC+4)',
-  'Asia/Bishkek': 'Бишкек (UTC+6)',
-  'Europe/Chisinau': 'Кишинёв (UTC+2)',
-  'UTC': 'UTC',
-};
-
-/* ===== Onboarding ===== */
 function Onboarding({ onComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -139,7 +138,6 @@ function Onboarding({ onComplete }) {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow'
   });
 
-  /* City autocomplete */
   const [citySuggestions, setCitySuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [citySelected, setCitySelected] = useState(false);
@@ -154,6 +152,7 @@ function Onboarding({ onComplete }) {
       setShowSuggestions(false);
       return;
     }
+
     debounceRef.current = setTimeout(async () => {
       try {
         const results = await apiRequest(`/v1/geo/cities?q=${encodeURIComponent(query)}`);
@@ -177,17 +176,16 @@ function Onboarding({ onComplete }) {
       birth_place: city.name,
       latitude: String(city.latitude),
       longitude: String(city.longitude),
-      timezone: city.timezone,
+      timezone: city.timezone
     }));
     setCitySelected(true);
     setShowSuggestions(false);
     setCitySuggestions([]);
   };
 
-  /* Close dropdown on outside click */
   useEffect(() => {
-    const handleClick = (e) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+    const handleClick = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
         setShowSuggestions(false);
       }
     };
@@ -199,12 +197,7 @@ function Onboarding({ onComplete }) {
     };
   }, []);
 
-  const canSubmit =
-    form.birth_date &&
-    form.birth_place &&
-    form.latitude &&
-    form.longitude &&
-    form.timezone;
+  const canSubmit = form.birth_date && form.birth_place && form.latitude && form.longitude && form.timezone;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -223,13 +216,13 @@ function Onboarding({ onComplete }) {
         })
       });
 
-      const chart = await apiRequest('/v1/natal/calculate', {
+      await apiRequest('/v1/natal/calculate', {
         method: 'POST',
         body: JSON.stringify({ profile_id: profile.id })
       });
 
       localStorage.setItem('onboarding_complete', '1');
-      onComplete(chart);
+      onComplete();
     } catch (e) {
       setError(String(e?.message || e));
     } finally {
@@ -244,11 +237,7 @@ function Onboarding({ onComplete }) {
           <label>
             Дата рождения
             <Hint text="Укажите точную дату для составления натальной карты" />
-            <input
-              type="date"
-              value={form.birth_date}
-              onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
-            />
+            <input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
           </label>
         </motion.div>
 
@@ -256,11 +245,7 @@ function Onboarding({ onComplete }) {
           <label>
             Время рождения
             <Hint text="Если не знаете точного времени, оставьте 12:00" />
-            <input
-              type="time"
-              value={form.birth_time}
-              onChange={(e) => setForm({ ...form, birth_time: e.target.value })}
-            />
+            <input type="time" value={form.birth_time} onChange={(e) => setForm({ ...form, birth_time: e.target.value })} />
             <span className="input-hint">Если не знаете точно, оставьте 12:00</span>
           </label>
         </motion.div>
@@ -278,6 +263,7 @@ function Onboarding({ onComplete }) {
                 autoComplete="off"
               />
             </label>
+
             <AnimatePresence>
               {showSuggestions && citySuggestions.length > 0 && (
                 <motion.ul
@@ -288,7 +274,7 @@ function Onboarding({ onComplete }) {
                   transition={{ duration: 0.15 }}
                 >
                   {citySuggestions.map((city) => (
-                    <li key={city.name} onClick={() => selectCity(city)}>
+                    <li key={`${city.name}-${city.latitude}-${city.longitude}`} onClick={() => selectCity(city)}>
                       <span className="city-name">{city.name}</span>
                       <span className="city-tz">{TZ_LABELS[city.timezone] || city.timezone}</span>
                     </li>
@@ -296,6 +282,7 @@ function Onboarding({ onComplete }) {
                 </motion.ul>
               )}
             </AnimatePresence>
+
             {citySelected && (
               <span className="input-hint" style={{ color: 'var(--ok)' }}>
                 Координаты и часовой пояс заполнены автоматически
@@ -307,10 +294,7 @@ function Onboarding({ onComplete }) {
         <motion.div variants={staggerItem}>
           <label>
             Часовой пояс
-            <select
-              value={form.timezone}
-              onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-            >
+            <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
               {TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>{TZ_LABELS[tz] || tz}</option>
               ))}
@@ -320,11 +304,7 @@ function Onboarding({ onComplete }) {
 
         {!showManualCoords && !citySelected && form.birth_place && (
           <motion.div variants={staggerItem}>
-            <button
-              className="profile-toggle"
-              onClick={() => setShowManualCoords(true)}
-              type="button"
-            >
+            <button className="profile-toggle" onClick={() => setShowManualCoords(true)} type="button">
               Нет моего города? Указать координаты вручную
             </button>
           </motion.div>
@@ -371,8 +351,7 @@ function Onboarding({ onComplete }) {
   );
 }
 
-/* ===== Dashboard ===== */
-function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboarding }) {
+function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenCombo, onResetOnboarding }) {
   const [compatLink, setCompatLink] = useState('');
   const [compatLoading, setCompatLoading] = useState(false);
   const [error, setError] = useState('');
@@ -385,8 +364,7 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenWishlist, on
         method: 'POST',
         body: JSON.stringify({ ttl_days: 7, max_uses: 1 })
       });
-      const url = buildStartAppLink(invite.token);
-      setCompatLink(url);
+      setCompatLink(buildStartAppLink(invite.token));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -395,49 +373,24 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenWishlist, on
   };
 
   const menuItems = [
-    {
-      icon: '\u2728',
-      label: 'Натальная карта',
-      hint: 'Полный разбор по планетам',
-      action: onOpenNatal
-    },
-    {
-      icon: '\uD83C\uDF19',
-      label: 'Ежедневный прогноз',
-      hint: 'Энергия и фокус дня',
-      action: onOpenStories
-    },
-    {
-      icon: '\uD83D\uDC9C',
-      label: 'Наше созвездие',
-      hint: 'Проверьте совместимость',
-      action: createCompatLink
-    },
-    {
-      icon: '\uD83C\uDFB4',
-      label: 'Таро-расклад',
-      hint: 'Расклад на 3 карты',
-      action: onOpenTarot
-    },
-    {
-      icon: '\uD83C\uDF81',
-      label: 'Карта желаний',
-      hint: 'Создайте и делитесь',
-      action: onOpenWishlist
-    }
+    { icon: '✨', label: 'Натальная карта', hint: 'Полный разбор и PDF', action: onOpenNatal },
+    { icon: '🌙', label: 'Сторис дня', hint: 'Короткие персональные инсайты', action: onOpenStories },
+    { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями', action: onOpenTarot },
+    { icon: '🧭', label: 'Комбо разбор', hint: 'Астрология + таро', action: onOpenCombo },
+    { icon: '💜', label: 'Совместимость', hint: 'Виральная ссылка для пары', action: createCompatLink }
   ];
 
   return (
-    <Shell title="Созвездие" subtitle="Платформа, где связи становятся видимыми.">
+    <Shell title="Созвездие" subtitle="Астрология, таро и совместимость в одном потоке.">
       <motion.div className="card-grid" variants={staggerContainer} initial="initial" animate="animate">
-        {menuItems.map((item, idx) => (
+        {menuItems.map((item) => (
           <motion.button
-            key={idx}
+            key={item.label}
             className="menu-btn"
             onClick={item.action}
             variants={staggerItem}
             whileTap={{ scale: 0.97 }}
-            disabled={item.label === 'Наше созвездие' && compatLoading}
+            disabled={item.label === 'Совместимость' && compatLoading}
           >
             <span className="menu-icon">{item.icon}</span>
             <span className="menu-text">
@@ -458,7 +411,7 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenWishlist, on
           >
             <p className="section-title">Ссылка для партнёра</p>
             <p className="link-box">{compatLink}</p>
-            <button className="ghost" onClick={() => shareLink(compatLink, 'Проверь нашу совместимость \u{1F4AB}')}>
+            <button className="ghost" onClick={() => shareLink(compatLink, 'Проверь нашу совместимость 💫')}>
               Поделиться созвездием
             </button>
           </motion.div>
@@ -467,119 +420,133 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenWishlist, on
 
       {error && <p className="error">{error}</p>}
 
-      <button className="profile-toggle" onClick={onResetOnboarding}>
-        Мой профиль &#x25BE;
-      </button>
+      <button className="profile-toggle" onClick={onResetOnboarding}>Обновить данные рождения</button>
     </Shell>
   );
 }
 
-/* ===== Natal Chart ===== */
 function NatalChart({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [chart, setChart] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    apiRequest('/v1/natal/latest')
+    apiRequest('/v1/natal/full')
       .then(setChart)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const interpretation = chart?.chart_payload?.interpretation;
-  const keyAspects = interpretation?.key_aspects || [];
+  const downloadPdf = async () => {
+    setDownloading(true);
+    setError('');
+    try {
+      const blob = await apiBinaryRequest('/v1/reports/natal.pdf');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'natal-report.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
-    <Shell title="Натальная карта" subtitle="Ваш персональный астрологический профиль" onBack={onBack}>
+    <Shell title="Натальная карта" subtitle="Подробный персональный разбор" onBack={onBack}>
       {loading && <p className="loading-text">Собираем карту...</p>}
       {error && <p className="error">{error}</p>}
 
       {chart && (
         <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
           <motion.div className="chip-row" variants={staggerItem} style={{ justifyContent: 'center' }}>
-            <span>&#x2600; Солнце: {chart.sun_sign}</span>
-            <span>&#x263D; Луна: {chart.moon_sign}</span>
-            <span>&#x2191; Асцендент: {chart.rising_sign}</span>
+            <span>☀ {chart.sun_sign}</span>
+            <span>☽ {chart.moon_sign}</span>
+            <span>↑ {chart.rising_sign}</span>
           </motion.div>
 
-          {interpretation?.summary && (
+          {chart.wheel_chart_url && (
             <motion.article className="story-card" variants={staggerItem}>
-              <p>{interpretation.summary}</p>
+              <img src={chart.wheel_chart_url} alt="Natal wheel" style={{ width: '100%', borderRadius: 12 }} />
             </motion.article>
           )}
 
-          {interpretation?.sun_explanation && (
-            <motion.article className="story-card" variants={staggerItem}>
-              <p><strong>Солнце:</strong> {interpretation.sun_explanation}</p>
-              <p><strong>Луна:</strong> {interpretation.moon_explanation}</p>
-              <p><strong>Асцендент:</strong> {interpretation.rising_explanation}</p>
+          {(chart.interpretation_sections || []).map((section, idx) => (
+            <motion.article className="story-card" variants={staggerItem} key={`${section.title}-${idx}`}>
+              <p className="section-title">{section.icon} {section.title}</p>
+              <p>{section.text}</p>
             </motion.article>
-          )}
+          ))}
 
-          {keyAspects.length > 0 && (
-            <motion.article className="story-card" variants={staggerItem}>
-              <p className="section-title">Ключевые аспекты</p>
-              {keyAspects.map((line, idx) => (
-                <p key={idx} style={{ marginTop: idx ? 6 : 0 }}>{line}</p>
-              ))}
-            </motion.article>
-          )}
+          <button className="cta" onClick={downloadPdf} disabled={downloading}>
+            {downloading ? 'Готовим PDF...' : 'Скачать PDF-отчёт'}
+          </button>
         </motion.div>
       )}
     </Shell>
   );
 }
 
-/* ===== Stories (Daily Forecast) ===== */
 function Stories({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [forecast, setForecast] = useState(null);
+  const [payload, setPayload] = useState(null);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    apiRequest('/v1/forecast/daily')
-      .then(setForecast)
+    apiRequest('/v1/forecast/stories')
+      .then((data) => {
+        setPayload(data);
+        setIndex(0);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
+  const slides = payload?.slides || [];
+  const slide = slides[index];
+
   return (
-    <Shell title="Моя звезда" subtitle="Персональный ежедневный прогноз" onBack={onBack}>
-      {loading && <p className="loading-text">Читаем звёзды...</p>}
+    <Shell title="Сторис дня" subtitle="Краткий персональный поток на сегодня" onBack={onBack}>
+      {loading && <p className="loading-text">Готовим сторис...</p>}
       {error && <p className="error">{error}</p>}
 
-      {forecast && (
-        <motion.div
-          className="stack"
-          variants={staggerContainer}
-          initial="initial"
-          animate="animate"
-        >
-          <motion.div variants={staggerItem}>
-            <div className="energy-circle" style={{ '--energy-pct': `${forecast.energy_score}%` }}>
-              <span className="energy-value">{forecast.energy_score}</span>
-            </div>
-            <p style={{ textAlign: 'center', marginTop: 8, fontSize: '0.85rem' }}>Энергия дня</p>
-          </motion.div>
-
+      {slide && (
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
           <motion.article className="story-card" variants={staggerItem}>
-            <small>{forecast.date}</small>
-            <p>{forecast.summary}</p>
+            <small>{payload.date}</small>
+            <p className="section-title">{slide.title}</p>
+            <p>{slide.body}</p>
+            {slide.badge && <div className="chip-row"><span>{slide.badge}</span></div>}
           </motion.article>
 
-          <motion.div className="chip-row" variants={staggerItem} style={{ justifyContent: 'center' }}>
-            {forecast.payload?.sun_sign && <span>&#x2600; {forecast.payload.sun_sign}</span>}
-            {forecast.payload?.moon_sign && <span>&#x263D; {forecast.payload.moon_sign}</span>}
-            {forecast.payload?.rising_sign && <span>&#x2191; {forecast.payload.rising_sign}</span>}
-          </motion.div>
+          <div className="grid-2">
+            <button className="ghost" disabled={index === 0} onClick={() => setIndex((prev) => Math.max(0, prev - 1))}>Назад</button>
+            <button
+              className="cta"
+              disabled={index >= slides.length - 1}
+              onClick={() => setIndex((prev) => Math.min(slides.length - 1, prev + 1))}
+            >
+              Дальше
+            </button>
+          </div>
+
+          <button
+            className="ghost"
+            onClick={() => shareLink(buildStartAppLink('sc_stories'), 'Посмотри мой астросторис-день ✨')}
+          >
+            Поделиться
+          </button>
         </motion.div>
       )}
     </Shell>
   );
 }
 
-/* ===== Tarot ===== */
 function Tarot({ onBack }) {
   const [question, setQuestion] = useState('');
   const [reading, setReading] = useState(null);
@@ -607,13 +574,12 @@ function Tarot({ onBack }) {
       <div className="stack">
         <label>
           Ваш вопрос
-          <Hint text="Сформулируйте открытый вопрос, избегая &laquo;да/нет&raquo;" />
+          <Hint text="Чем точнее формулировка, тем практичнее трактовка" />
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="На чём сфокусироваться сегодня?"
+            placeholder="Какой следующий шаг в отношениях/работе?"
           />
-          <span className="input-hint">Можно оставить пустым для общего расклада</span>
         </label>
 
         <button className="cta" onClick={draw} disabled={loading}>
@@ -624,20 +590,10 @@ function Tarot({ onBack }) {
       {error && <p className="error">{error}</p>}
 
       {reading && (
-        <motion.div
-          className="stack"
-          variants={staggerContainer}
-          initial="initial"
-          animate="animate"
-          style={{ gap: 12 }}
-        >
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate" style={{ gap: 12 }}>
           <p className="section-title">Ваш расклад</p>
           {reading.cards.map((card, idx) => (
-            <motion.article
-              key={`${card.card_name}-${idx}`}
-              className="tarot-card"
-              variants={staggerItem}
-            >
+            <motion.article key={`${card.card_name}-${idx}`} className="tarot-card" variants={staggerItem}>
               {card.image_url && (
                 <div className="tarot-image-frame">
                   <img
@@ -651,7 +607,7 @@ function Tarot({ onBack }) {
               <span className="tarot-position">{card.slot_label}</span>
               <span className="tarot-name">{card.card_name}</span>
               <span className={`tarot-orientation ${card.is_reversed ? 'reversed' : 'upright'}`}>
-                {card.is_reversed ? '\u21BB Перевёрнутая' : '\u2191 Прямая'}
+                {card.is_reversed ? '↻ Перевёрнутая' : '↑ Прямая'}
               </span>
               <p className="tarot-meaning">{card.meaning}</p>
             </motion.article>
@@ -662,8 +618,76 @@ function Tarot({ onBack }) {
   );
 }
 
-/* ===== Compatibility Landing ===== */
-function CompatibilityLanding({ token }) {
+function ComboInsights({ onBack }) {
+  const [question, setQuestion] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const runCombo = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiRequest('/v1/insights/astro-tarot', {
+        method: 'POST',
+        body: JSON.stringify({ question, spread_type: 'three_card' })
+      });
+      setResult(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Shell title="Комбо разбор" subtitle="Слияние натала, дня и таро" onBack={onBack}>
+      <div className="stack">
+        <label>
+          Запрос
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Что сейчас важнее всего в моей ситуации?"
+          />
+        </label>
+
+        <button className="cta" onClick={runCombo} disabled={loading}>
+          {loading ? 'Собираем сигналы...' : 'Запустить комбо'}
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      {result && (
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+          <motion.article className="story-card" variants={staggerItem}>
+            <p className="section-title">Астрологический фон</p>
+            <p>{result.natal_summary}</p>
+          </motion.article>
+
+          <motion.article className="story-card" variants={staggerItem}>
+            <p className="section-title">Прогноз дня</p>
+            <p>{result.daily_summary}</p>
+          </motion.article>
+
+          <motion.article className="story-card" variants={staggerItem}>
+            <p className="section-title">Единый совет</p>
+            <p>{result.combined_advice}</p>
+          </motion.article>
+
+          <div className="chip-row">
+            {(result.tarot_cards || []).slice(0, 3).map((card) => (
+              <span key={`${card.position}-${card.card_name}`}>{card.card_name}</span>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </Shell>
+  );
+}
+
+function CompatibilityLanding({ token, onBack }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -690,37 +714,23 @@ function CompatibilityLanding({ token }) {
         method: 'POST',
         body: JSON.stringify({ ttl_days: 7, max_uses: 1 })
       });
-      const link = buildStartAppLink(invite.token);
-      shareLink(link, 'Твоя очередь проверить совместимость \u{1F4AB}');
+      shareLink(buildStartAppLink(invite.token), 'Твоя очередь проверить совместимость 💫');
     } catch (e) {
       setError(e.message);
     }
   };
 
   return (
-    <Shell title="Наше созвездие" subtitle="Узнайте вашу астрологическую совместимость">
+    <Shell title="Наше созвездие" subtitle="Совместимость по реферальной ссылке" onBack={onBack}>
       {!result && (
         <>
           <div className="compat-hero">
             <div className="compat-constellation">
-              <motion.div
-                className="compat-star"
-                animate={{ y: [-4, 4, -4] }}
-                transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-              />
-              <motion.div
-                className="compat-star"
-                animate={{ y: [3, -5, 3] }}
-                transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut', delay: 0.5 }}
-              />
-              <motion.div
-                className="compat-star"
-                animate={{ y: [-3, 4, -3] }}
-                transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut', delay: 1 }}
-              />
+              <motion.div className="compat-star" animate={{ y: [-4, 4, -4] }} transition={{ repeat: Infinity, duration: 3 }} />
+              <motion.div className="compat-star" animate={{ y: [3, -5, 3] }} transition={{ repeat: Infinity, duration: 3.5, delay: 0.5 }} />
+              <motion.div className="compat-star" animate={{ y: [-3, 4, -3] }} transition={{ repeat: Infinity, duration: 2.8, delay: 1 }} />
             </div>
           </div>
-
           <button className="cta" onClick={start} disabled={loading}>
             {loading ? 'Считаем звёзды...' : 'Узнать совместимость'}
           </button>
@@ -730,196 +740,35 @@ function CompatibilityLanding({ token }) {
       {error && <p className="error">{error}</p>}
 
       {result && (
-        <motion.div
-          className="stack"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
+        <motion.div className="stack" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="compat-hero">
-            <div className="compat-constellation">
-              <motion.div
-                className="compat-star"
-                animate={{ y: [-4, 4, -4] }}
-                transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-              />
-              <motion.div
-                className="compat-star"
-                animate={{ y: [3, -5, 3] }}
-                transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut', delay: 0.5 }}
-              />
-              <motion.div
-                className="compat-star"
-                animate={{ y: [-3, 4, -3] }}
-                transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut', delay: 1 }}
-              />
-            </div>
-            <motion.span
-              className="compat-score"
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-            >
-              {result.score}%
-            </motion.span>
+            <span className="compat-score">{result.score}%</span>
             <span className="compat-score-label">Совместимость</span>
           </div>
 
-          {result.summary && (
-            <div className="story-card">
-              <p>{result.summary}</p>
+          <div className="story-card"><p>{result.summary}</p></div>
+
+          {Array.isArray(result.strengths) && result.strengths.length > 0 && (
+            <div className="compat-section">
+              <h3>Сильные стороны</h3>
+              <ul>{result.strengths.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
             </div>
           )}
 
-          {result.strengths && result.strengths.length > 0 && (
-            <motion.div className="compat-section" variants={staggerItem}>
-              <h3>Ваши сильные стороны</h3>
-              <ul>
-                {result.strengths.map((s, i) => <li key={i}>{s}</li>)}
-              </ul>
-            </motion.div>
-          )}
-
-          {result.growth_areas && result.growth_areas.length > 0 && (
-            <motion.div className="compat-section" variants={staggerItem}>
+          {Array.isArray(result.growth_areas) && result.growth_areas.length > 0 && (
+            <div className="compat-section">
               <h3>Точки роста</h3>
-              <ul>
-                {result.growth_areas.map((s, i) => <li key={i}>{s}</li>)}
-              </ul>
-            </motion.div>
+              <ul>{result.growth_areas.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
+            </div>
           )}
 
-          <button className="ghost" onClick={shareOwnLink}>
-            Поделиться созвездием
-          </button>
+          <button className="ghost" onClick={shareOwnLink}>Поделиться созвездием</button>
         </motion.div>
       )}
     </Shell>
   );
 }
 
-/* ===== Wishlist Landing ===== */
-function WishlistLanding({ token, onBack }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState('');
-  const [reserved, setReserved] = useState('');
-  const [reserving, setReserving] = useState('');
-
-  useEffect(() => {
-    apiRequest(`/v1/public/wishlists/${token}`)
-      .then(setData)
-      .catch((e) => setError(e.message));
-  }, [token]);
-
-  const reserve = async (itemId) => {
-    setError('');
-    setReserving(itemId);
-    try {
-      await apiRequest(`/v1/public/wishlists/${token}/items/${itemId}/reserve`, {
-        method: 'POST',
-        body: JSON.stringify({ reserver_name: 'Mini App User' })
-      });
-      setReserved(itemId);
-      const refreshed = await apiRequest(`/v1/public/wishlists/${token}`);
-      setData(refreshed);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setReserving('');
-    }
-  };
-
-  return (
-    <Shell
-      title="Карта желаний"
-      subtitle={data ? data.title : 'Загрузка...'}
-      onBack={onBack}
-    >
-      {error && <p className="error">{error}</p>}
-      {!data && !error && <p className="loading-text">Загружаем желания...</p>}
-
-      {data && (
-        <>
-          <motion.div
-            className="item-grid"
-            variants={staggerContainer}
-            initial="initial"
-            animate="animate"
-          >
-            {data.items.map((item) => (
-              <motion.article
-                key={item.id}
-                className="item-card"
-                variants={staggerItem}
-                whileTap={{ scale: 0.97 }}
-              >
-                <strong>{item.title}</strong>
-                <span className="item-price">
-                  {item.budget_cents ? `${(item.budget_cents / 100).toLocaleString('ru-RU')} \u20BD` : 'Без бюджета'}
-                </span>
-                <span className={`status-badge ${item.status === 'reserved' ? 'reserved' : 'free'}`}>
-                  {item.status === 'reserved' ? 'Забронировано' : 'Свободно'}
-                </span>
-                <button
-                  className={item.status === 'reserved' ? 'ghost' : 'cta'}
-                  disabled={item.status === 'reserved' || reserving === item.id}
-                  onClick={() => reserve(item.id)}
-                  style={{ padding: '10px 14px', fontSize: '0.82rem' }}
-                >
-                  {reserving === item.id ? 'Бронируем...' : item.status === 'reserved' ? 'Уже занято' : 'Забронировать'}
-                </button>
-              </motion.article>
-            ))}
-          </motion.div>
-
-          <button
-            className="ghost"
-            onClick={() => shareLink(
-              buildStartAppLink(token),
-              'Посмотри мою карту желаний \u{1F381}'
-            )}
-          >
-            Поделиться созвездием
-          </button>
-        </>
-      )}
-
-      <AnimatePresence>
-        {reserved && (
-          <motion.div className="confetti" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            Подарок забронирован!
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Shell>
-  );
-}
-
-/* ===== Local Wishlist Info ===== */
-function LocalWishlistInfo({ onBack }) {
-  return (
-    <Shell title="Карта желаний" subtitle="Создайте список и делитесь ссылкой" onBack={onBack}>
-      <div className="story-card">
-        <h3>Как это работает?</h3>
-        <p>Создайте список желаний через API и поделитесь ссылкой с друзьями. Они смогут забронировать подарки для вас.</p>
-      </div>
-
-      <div className="stack" style={{ gap: 8 }}>
-        <p className="section-title">API эндпоинты</p>
-        <code>POST /v1/wishlists</code>
-        <code>POST /v1/wishlists/{'{id}'}/items</code>
-      </div>
-
-      <div className="story-card">
-        <p style={{ fontSize: '0.85rem' }}>
-          Для открытия публичной витрины используйте параметр <code style={{ display: 'inline', padding: '2px 6px', borderRadius: 6 }}>startapp=wl_...</code>
-        </p>
-      </div>
-    </Shell>
-  );
-}
-
-/* ===== App Root ===== */
 export default function App() {
   const startParam = useStartParam();
   const [view, setView] = useState('dashboard');
@@ -928,12 +777,9 @@ export default function App() {
   const [hasOnboarding, setHasOnboarding] = useState(onboardingDone);
 
   useEffect(() => {
-    if (startParam?.startsWith('comp_')) {
-      setView('compat');
-      return;
-    }
-    if (startParam?.startsWith('wl_')) {
-      setView('wishlist-public');
+    const mapped = startParamToView(startParam);
+    if (mapped) {
+      setView(mapped);
       return;
     }
     if (!onboardingDone) {
@@ -941,32 +787,16 @@ export default function App() {
     }
   }, [startParam, onboardingDone]);
 
-  if (view === 'compat' && startParam?.startsWith('comp_')) {
-    return <CompatibilityLanding token={startParam} />;
-  }
-
-  if (view === 'wishlist-public' && startParam?.startsWith('wl_')) {
-    return <WishlistLanding token={startParam} />;
-  }
-
   if (view === 'onboarding' || !hasOnboarding) {
     return <Onboarding onComplete={() => { setHasOnboarding(true); setView('dashboard'); }} />;
   }
 
-  if (view === 'stories') {
-    return <Stories onBack={() => setView('dashboard')} />;
-  }
-
-  if (view === 'natal') {
-    return <NatalChart onBack={() => setView('dashboard')} />;
-  }
-
-  if (view === 'tarot') {
-    return <Tarot onBack={() => setView('dashboard')} />;
-  }
-
-  if (view === 'wishlist-local') {
-    return <LocalWishlistInfo onBack={() => setView('dashboard')} />;
+  if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} />;
+  if (view === 'stories') return <Stories onBack={() => setView('dashboard')} />;
+  if (view === 'tarot') return <Tarot onBack={() => setView('dashboard')} />;
+  if (view === 'combo') return <ComboInsights onBack={() => setView('dashboard')} />;
+  if (view === 'compat' && startParam?.startsWith('comp_')) {
+    return <CompatibilityLanding token={startParam} onBack={() => setView('dashboard')} />;
   }
 
   return (
@@ -974,7 +804,7 @@ export default function App() {
       onOpenNatal={() => setView('natal')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
-      onOpenWishlist={() => setView('wishlist-local')}
+      onOpenCombo={() => setView('combo')}
       onResetOnboarding={() => {
         localStorage.removeItem('onboarding_complete');
         setHasOnboarding(false);

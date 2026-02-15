@@ -68,3 +68,22 @@ def get_latest_natal(
         chart_payload=chart.chart_payload,
         created_at=chart.created_at,
     )
+
+
+@router.get("/full", response_model=schemas.NatalFullResponse)
+def get_full_natal(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user_dep),
+):
+    chart, sections, wheel_chart_url = services.get_full_natal_chart(db=db, user_id=user.id)
+    return schemas.NatalFullResponse(
+        id=chart.id,
+        profile_id=chart.profile_id,
+        sun_sign=chart.sun_sign,
+        moon_sign=chart.moon_sign,
+        rising_sign=chart.rising_sign,
+        chart_payload=chart.chart_payload,
+        interpretation_sections=sections,
+        wheel_chart_url=wheel_chart_url,
+        created_at=chart.created_at,
+    )
