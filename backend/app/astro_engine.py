@@ -133,7 +133,14 @@ def calculate_natal_chart(profile: BirthProfile) -> dict:
             "retrograde": speed < 0,
         }
 
-    cusps, ascmc = swe.houses_ex(jd_ut, profile.latitude, profile.longitude, b"P")
+    try:
+        cusps, ascmc = swe.houses_ex(jd_ut, profile.latitude, profile.longitude, b"P")
+    except Exception:
+        try:
+            cusps, ascmc = swe.houses(jd_ut, profile.latitude, profile.longitude, b"W")
+        except Exception:
+            return _fallback_chart(profile)
+
     if len(cusps) > 12:
         houses = [round(float(cusps[idx]), 6) for idx in range(1, 13)]
     else:
