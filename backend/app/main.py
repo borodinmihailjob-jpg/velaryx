@@ -8,7 +8,11 @@ from starlette.responses import Response
 
 from .config import settings
 from .localization import localize_json_bytes
-from .routers import compat, forecast, geo, health, natal, tarot, wishlist
+from .routers import compat, forecast, health, natal, tarot, wishlist
+try:
+    from .routers import geo
+except ImportError:  # pragma: no cover
+    geo = None
 
 
 class HealthAccessFilter(logging.Filter):
@@ -65,7 +69,8 @@ if settings.cors_origins():
     )
 
 app.include_router(health.router)
-app.include_router(geo.router)
+if geo is not None:
+    app.include_router(geo.router)
 app.include_router(natal.router)
 app.include_router(forecast.router)
 app.include_router(tarot.router)
