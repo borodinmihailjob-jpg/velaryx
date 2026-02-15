@@ -1,3 +1,9 @@
+databases:
+  - name: astrobot-postgres
+    databaseName: astrobot
+    user: astrobot
+    plan: basic-256mb
+
 services:
   - type: keyvalue
     name: astrobot-redis
@@ -17,7 +23,9 @@ services:
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: astrobot-postgres
+          property: connectionString
       - key: REDIS_URL
         fromService:
           type: keyvalue
