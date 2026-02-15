@@ -137,7 +137,23 @@ def _translate_via_google_free(text: str) -> str:
         return text
 
 
+def _replace_known_terms(value: str) -> str:
+    text = value
+    for src, dst in KNOWN_TRANSLATIONS.items():
+        if src == dst:
+            continue
+        if not LATIN_RE.search(src):
+            continue
+        pattern = re.compile(rf"(?<![A-Za-zА-Яа-яЁё]){re.escape(src)}(?![A-Za-zА-Яа-яЁё])")
+        text = pattern.sub(dst, text)
+    return text
+
+
 def _localize_string(value: str) -> str:
+    replaced = _replace_known_terms(value)
+    if replaced != value:
+        return replaced
+
     direct = KNOWN_TRANSLATIONS.get(value)
     if direct:
         return direct

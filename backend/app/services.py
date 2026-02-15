@@ -11,6 +11,42 @@ from .astro_engine import calculate_natal_chart
 from .security import expiry_after_days, generate_token
 from .tarot_engine import build_seed, card_image_url, draw_cards, supported_spreads
 
+PLANET_LABELS_RU = {
+    "sun": "Солнце",
+    "moon": "Луна",
+    "mercury": "Меркурий",
+    "venus": "Венера",
+    "mars": "Марс",
+    "jupiter": "Юпитер",
+    "saturn": "Сатурн",
+    "uranus": "Уран",
+    "neptune": "Нептун",
+    "pluto": "Плутон",
+}
+
+ASPECT_LABELS_RU = {
+    "conjunction": "соединение",
+    "sextile": "секстиль",
+    "square": "квадрат",
+    "trine": "тригон",
+    "opposition": "оппозиция",
+}
+
+SIGN_RU_EN = {
+    "Овен": "Aries",
+    "Телец": "Taurus",
+    "Близнецы": "Gemini",
+    "Рак": "Cancer",
+    "Лев": "Leo",
+    "Дева": "Virgo",
+    "Весы": "Libra",
+    "Скорпион": "Scorpio",
+    "Стрелец": "Sagittarius",
+    "Козерог": "Capricorn",
+    "Водолей": "Aquarius",
+    "Рыбы": "Pisces",
+}
+
 
 def get_or_create_user(db: Session, tg_user_id: int) -> models.User:
     user = db.query(models.User).filter(models.User.tg_user_id == tg_user_id).first()
@@ -126,6 +162,85 @@ def _natal_sections_from_payload(chart_payload: dict) -> list[dict]:
             }
         )
 
+    planets = chart_payload.get("planets") if isinstance(chart_payload, dict) else {}
+    if isinstance(planets, dict) and planets:
+        planet_order = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto"]
+        lines: list[str] = []
+        for key in planet_order:
+            pdata = planets.get(key)
+            if not isinstance(pdata, dict):
+                continue
+            sign = str(pdata.get("sign") or "—")
+            lon = pdata.get("longitude")
+            retro = bool(pdata.get("retrograde"))
+            retro_suffix = ", ретроградно" if retro else ""
+            label = PLANET_LABELS_RU.get(key, key.capitalize())
+            if lon is None:
+                lines.append(f"{label}: {sign}{retro_suffix}")
+            else:
+                lines.append(f"{label}: {sign}, {round(float(lon), 2)}°{retro_suffix}")
+        if lines:
+            sections.append(
+                {
+                    "title": "Планетный профиль",
+                    "text": " | ".join(lines),
+                    "icon": "🪐",
+                }
+            )
+
+    houses = chart_payload.get("houses") if isinstance(chart_payload, dict) else None
+    if isinstance(houses, list) and houses:
+        house_chunks: list[str] = []
+        for idx, deg in enumerate(houses[:12], start=1):
+            try:
+                house_chunks.append(f"{idx} дом: {round(float(deg), 2)}°")
+            except (TypeError, ValueError):
+                continue
+        if house_chunks:
+            sections.append(
+                {
+                    "title": "Куспиды домов",
+                    "text": " • ".join(house_chunks),
+                    "icon": "🏛️",
+                }
+            )
+
+    aspects = chart_payload.get("aspects") if isinstance(chart_payload, dict) else None
+    if isinstance(aspects, list) and aspects:
+        aspect_lines: list[str] = []
+        for item in aspects[:10]:
+            if not isinstance(item, dict):
+                continue
+            p1 = PLANET_LABELS_RU.get(str(item.get("planet_1", "")).lower(), str(item.get("planet_1", "")))
+            p2 = PLANET_LABELS_RU.get(str(item.get("planet_2", "")).lower(), str(item.get("planet_2", "")))
+            asp = ASPECT_LABELS_RU.get(str(item.get("aspect", "")).lower(), str(item.get("aspect", "")))
+            orb = item.get("orb")
+            if orb is None:
+                aspect_lines.append(f"{p1} - {p2}: {asp}")
+            else:
+                try:
+                    aspect_lines.append(f"{p1} - {p2}: {asp} (орб {round(float(orb), 2)})")
+                except (TypeError, ValueError):
+                    aspect_lines.append(f"{p1} - {p2}: {asp}")
+        if aspect_lines:
+            sections.append(
+                {
+                    "title": "Полная матрица аспектов",
+                    "text": " • ".join(aspect_lines),
+                    "icon": "📐",
+                }
+            )
+
+    next_steps = interpretation.get("next_steps")
+    if isinstance(next_steps, list) and next_steps:
+        sections.append(
+            {
+                "title": "Практические шаги",
+                "text": " • ".join(str(item) for item in next_steps[:5]),
+                "icon": "🧭",
+            }
+        )
+
     return sections
 
 
@@ -230,6 +345,9 @@ def build_forecast_story_slides(chart: models.NatalChart, forecast: models.Daily
 
 
 def _sign_compatibility(inviter_sign: str, invitee_sign: str) -> tuple[int, list[str], list[str]]:
+    inviter_sign = SIGN_RU_EN.get(inviter_sign, inviter_sign)
+    invitee_sign = SIGN_RU_EN.get(invitee_sign, invitee_sign)
+
     if inviter_sign == invitee_sign:
         return (
             88,

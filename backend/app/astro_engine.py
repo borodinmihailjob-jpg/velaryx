@@ -77,6 +77,71 @@ SIGN_TRAITS = {
     "Pisces": "интуиция и эмпатия",
 }
 
+SIGN_EN_RU = {
+    "Aries": "Овен",
+    "Taurus": "Телец",
+    "Gemini": "Близнецы",
+    "Cancer": "Рак",
+    "Leo": "Лев",
+    "Virgo": "Дева",
+    "Libra": "Весы",
+    "Scorpio": "Скорпион",
+    "Sagittarius": "Стрелец",
+    "Capricorn": "Козерог",
+    "Aquarius": "Водолей",
+    "Pisces": "Рыбы",
+}
+
+SIGN_RU_EN = {value: key for key, value in SIGN_EN_RU.items()}
+
+PLANET_LABELS_RU = {
+    "sun": "Солнце",
+    "moon": "Луна",
+    "mercury": "Меркурий",
+    "venus": "Венера",
+    "mars": "Марс",
+    "jupiter": "Юпитер",
+    "saturn": "Сатурн",
+    "uranus": "Уран",
+    "neptune": "Нептун",
+    "pluto": "Плутон",
+}
+
+ASPECT_LABELS_RU = {
+    "conjunction": "соединение",
+    "sextile": "секстиль",
+    "square": "квадрат",
+    "trine": "тригон",
+    "opposition": "оппозиция",
+}
+
+
+def _normalize_sign_en(sign: str) -> str:
+    sign_clean = str(sign or "").strip()
+    if sign_clean in SIGN_EN_RU:
+        return sign_clean
+    if sign_clean in SIGN_RU_EN:
+        return SIGN_RU_EN[sign_clean]
+    title = sign_clean.title()
+    if title in SIGN_EN_RU:
+        return title
+    return sign_clean
+
+
+def _sign_ru(sign: str) -> str:
+    sign_en = _normalize_sign_en(sign)
+    return SIGN_EN_RU.get(sign_en, str(sign).strip())
+
+
+def _aspect_ru(aspect: str) -> str:
+    key = str(aspect or "").strip().lower()
+    return ASPECT_LABELS_RU.get(key, key)
+
+
+def _planet_ru(planet_key: str) -> str:
+    key = str(planet_key or "").strip().lower()
+    return PLANET_LABELS_RU.get(key, key.capitalize())
+
 
 
 def _sign_from_longitude(longitude: float) -> str:
@@ -108,34 +173,61 @@ def _calc_aspects(planet_positions: dict[str, float], orb: float = 6.0) -> list[
 
 
 def _build_interpretation(planets: dict[str, dict], rising_sign: str, aspects: list[dict]) -> dict[str, Any]:
-    sun_sign = planets.get("sun", {}).get("sign", "Unknown")
-    moon_sign = planets.get("moon", {}).get("sign", "Unknown")
+    sun_sign_raw = planets.get("sun", {}).get("sign", "Unknown")
+    moon_sign_raw = planets.get("moon", {}).get("sign", "Unknown")
+    rising_sign_raw = rising_sign
 
-    sun_theme = SIGN_TRAITS.get(sun_sign, "личная стратегия развития")
-    moon_theme = SIGN_TRAITS.get(moon_sign, "эмоциональная саморегуляция")
-    rising_theme = SIGN_TRAITS.get(rising_sign, "первое впечатление и стиль взаимодействия")
+    sun_sign_en = _normalize_sign_en(str(sun_sign_raw))
+    moon_sign_en = _normalize_sign_en(str(moon_sign_raw))
+    rising_sign_en = _normalize_sign_en(str(rising_sign_raw))
+
+    sun_sign = _sign_ru(sun_sign_en)
+    moon_sign = _sign_ru(moon_sign_en)
+    rising_sign_ru = _sign_ru(rising_sign_en)
+
+    sun_theme = SIGN_TRAITS.get(sun_sign_en, "личная стратегия развития")
+    moon_theme = SIGN_TRAITS.get(moon_sign_en, "эмоциональная саморегуляция")
+    rising_theme = SIGN_TRAITS.get(rising_sign_en, "первое впечатление и стиль взаимодействия")
 
     top_aspects = sorted(aspects, key=lambda item: item.get("orb", 999))[:3]
     aspect_lines: list[str] = []
     for item in top_aspects:
-        p1 = str(item.get("planet_1", "planet")).capitalize()
-        p2 = str(item.get("planet_2", "planet")).capitalize()
-        asp = item.get("aspect", "aspect")
+        p1 = _planet_ru(str(item.get("planet_1", "planet")))
+        p2 = _planet_ru(str(item.get("planet_2", "planet")))
+        asp = _aspect_ru(str(item.get("aspect", "aspect")))
         orb = item.get("orb")
         aspect_lines.append(f"{p1} - {p2}: {asp} (орб {orb})")
 
     summary = (
-        f"Солнце в {sun_sign} задает вектор через {sun_theme}; "
-        f"Луна в {moon_sign} показывает эмоции через {moon_theme}; "
-        f"асцендент в {rising_sign} проявляется как {rising_theme}."
+        f"Солнце в знаке {sun_sign} задает вектор через {sun_theme}. "
+        f"Луна в знаке {moon_sign} показывает эмоциональные реакции через {moon_theme}. "
+        f"Асцендент в знаке {rising_sign_ru} задает стиль проявления через {rising_theme}."
     )
+
+    planets_brief: list[str] = []
+    for key in PLANETS.keys():
+        pdata = planets.get(key, {})
+        sign_value = _sign_ru(str(pdata.get("sign", "")))
+        retro = bool(pdata.get("retrograde"))
+        retro_mark = ", ретроградно" if retro else ""
+        longitude = pdata.get("longitude")
+        if longitude is None:
+            planets_brief.append(f"{_planet_ru(key)}: {sign_value}{retro_mark}")
+        else:
+            planets_brief.append(f"{_planet_ru(key)}: {sign_value}, {longitude}°{retro_mark}")
 
     return {
         "summary": summary,
         "sun_explanation": f"Солнце в {sun_sign}: {sun_theme}.",
         "moon_explanation": f"Луна в {moon_sign}: {moon_theme}.",
-        "rising_explanation": f"Асцендент в {rising_sign}: {rising_theme}.",
+        "rising_explanation": f"Асцендент в {rising_sign_ru}: {rising_theme}.",
         "key_aspects": aspect_lines,
+        "planets_brief": planets_brief,
+        "next_steps": [
+            "Выберите 1 ключевую цель на ближайшие 14 дней и фиксируйте прогресс ежедневно.",
+            "Сверяйте решения с эмоциональным фоном Луны, а действия — с вектором Солнца.",
+            "Используйте сильные аспекты как точки ускорения, слабые — как зоны внимания.",
+        ],
     }
 
 
@@ -152,13 +244,15 @@ def _fallback_chart(profile: BirthProfile) -> dict:
     planet_payload = {
         name: {
             "longitude": round(lon, 5),
-            "sign": _sign_from_longitude(lon),
+            "sign": _sign_ru(_sign_from_longitude(lon)),
+            "sign_en": _sign_from_longitude(lon),
         }
         for name, lon in planet_longitudes.items()
     }
 
     house_cusps = [round((base + i * 30) % 360, 5) for i in range(12)]
-    rising_sign = _sign_from_longitude(house_cusps[0])
+    rising_sign_en = _sign_from_longitude(house_cusps[0])
+    rising_sign = _sign_ru(rising_sign_en)
     aspects = _calc_aspects(planet_longitudes)
 
     return {
@@ -168,6 +262,7 @@ def _fallback_chart(profile: BirthProfile) -> dict:
         "planets": planet_payload,
         "houses": house_cusps,
         "rising_sign": rising_sign,
+        "rising_sign_en": rising_sign_en,
         "aspects": aspects,
         "interpretation": _build_interpretation(planet_payload, rising_sign, aspects),
     }
@@ -214,13 +309,15 @@ def _normalize_astrologyapi(raw: dict[str, Any], utc_dt: datetime) -> dict | Non
             if lon is None:
                 continue
 
-            sign = _pick_text(planet, ["sign", "sign_name"]) or _sign_from_longitude(lon)
+            sign_raw = _pick_text(planet, ["sign", "sign_name"]) or _sign_from_longitude(lon)
+            sign_en = _normalize_sign_en(sign_raw)
             retro = bool(planet.get("isRetro") or planet.get("retrograde") or planet.get("is_retro"))
 
             planet_longitudes[name] = lon % 360
             planets_payload[name] = {
                 "longitude": round(lon % 360, 6),
-                "sign": sign,
+                "sign": _sign_ru(sign_en),
+                "sign_en": sign_en,
                 "retrograde": retro,
             }
 
@@ -242,13 +339,14 @@ def _normalize_astrologyapi(raw: dict[str, Any], utc_dt: datetime) -> dict | Non
     if len(houses_payload) < 12:
         houses_payload = [round((idx * 30.0) % 360.0, 6) for idx in range(12)]
 
-    rising_sign = None
+    rising_sign_en = None
     ascendant = raw.get("ascendant") if isinstance(raw, dict) else None
     if isinstance(ascendant, dict):
-        rising_sign = _pick_text(ascendant, ["sign", "sign_name"])
+        rising_sign_en = _normalize_sign_en(_pick_text(ascendant, ["sign", "sign_name"]) or "")
 
-    if not rising_sign:
-        rising_sign = _sign_from_longitude(houses_payload[0])
+    if not rising_sign_en:
+        rising_sign_en = _sign_from_longitude(houses_payload[0])
+    rising_sign = _sign_ru(rising_sign_en)
 
     aspects_payload: list[dict[str, Any]] = []
     raw_aspects = raw.get("aspects") if isinstance(raw, dict) else None
@@ -281,6 +379,7 @@ def _normalize_astrologyapi(raw: dict[str, Any], utc_dt: datetime) -> dict | Non
         "planets": planets_payload,
         "houses": houses_payload,
         "rising_sign": rising_sign,
+        "rising_sign_en": rising_sign_en,
         "aspects": aspects_payload,
         "provider_raw": raw,
     }
@@ -367,10 +466,12 @@ def _calculate_via_swisseph(profile: BirthProfile) -> dict:
 
         lon = float(coords[0] % 360)
         speed = float(coords[3])
+        sign_en = _sign_from_longitude(lon)
         planet_longitudes[name] = lon
         planets_payload[name] = {
             "longitude": round(lon, 6),
-            "sign": _sign_from_longitude(lon),
+            "sign": _sign_ru(sign_en),
+            "sign_en": sign_en,
             "retrograde": speed < 0,
         }
 
@@ -387,7 +488,8 @@ def _calculate_via_swisseph(profile: BirthProfile) -> dict:
     else:
         houses = [round(float(cusp), 6) for cusp in cusps[:12]]
 
-    rising_sign = _sign_from_longitude(float(ascmc[0]))
+    rising_sign_en = _sign_from_longitude(float(ascmc[0]))
+    rising_sign = _sign_ru(rising_sign_en)
     aspects = _calc_aspects(planet_longitudes)
 
     payload = {
@@ -398,6 +500,7 @@ def _calculate_via_swisseph(profile: BirthProfile) -> dict:
         "planets": planets_payload,
         "houses": houses,
         "rising_sign": rising_sign,
+        "rising_sign_en": rising_sign_en,
         "aspects": aspects,
     }
     payload["interpretation"] = _build_interpretation(planets_payload, rising_sign, aspects)
