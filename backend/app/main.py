@@ -1,10 +1,21 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .routers import compat, forecast, health, natal, tarot, wishlist
+
+
+class HealthAccessFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return '"GET /health HTTP/' not in message
+
+
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.addFilter(HealthAccessFilter())
 
 
 @asynccontextmanager
