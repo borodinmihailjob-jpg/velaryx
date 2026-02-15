@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
 import { apiRequest } from './api';
@@ -34,21 +34,65 @@ function useStartParam() {
   return sdkStartParam || fromUnsafe || fromQuery || null;
 }
 
-function Shell({ title, subtitle, children, action }) {
+/* ===== Hint Tooltip ===== */
+function Hint({ text }) {
+  const [show, setShow] = useState(false);
   return (
-    <motion.main className="screen" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+    <span
+      className="hint-tooltip"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onTouchStart={() => setShow(!show)}
+    >
+      <span className="hint-icon">?</span>
+      {show && <span className="hint-text">{text}</span>}
+    </span>
+  );
+}
+
+/* ===== Page transitions ===== */
+const pageVariants = {
+  initial: { opacity: 0, y: 20, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
+  exit: { opacity: 0, y: -10, transition: { duration: 0.2 } }
+};
+
+const staggerContainer = {
+  animate: { transition: { staggerChildren: 0.06 } }
+};
+
+const staggerItem = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } }
+};
+
+/* ===== Shell ===== */
+function Shell({ title, subtitle, children, onBack }) {
+  return (
+    <motion.main
+      className="screen"
+      variants={pageVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+    >
       <header className="screen-head">
         <div>
+          {onBack && (
+            <button className="back-btn" onClick={onBack} style={{ marginBottom: 8 }}>
+              &#8592; Назад
+            </button>
+          )}
           <h1>{title}</h1>
-          {subtitle ? <p>{subtitle}</p> : null}
+          {subtitle && <p>{subtitle}</p>}
         </div>
-        {action || null}
       </header>
       {children}
     </motion.main>
   );
 }
 
+/* ===== Onboarding ===== */
 function Onboarding({ onComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -61,7 +105,10 @@ function Onboarding({ onComplete }) {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   });
 
+  const canSubmit = form.birth_date && form.birth_place;
+
   const submit = async () => {
+    if (!canSubmit) return;
     setError('');
     setLoading(true);
     try {
@@ -92,29 +139,104 @@ function Onboarding({ onComplete }) {
   };
 
   return (
-    <Shell title="Добро пожаловать" subtitle="Соберем ваш астропрофиль для персональных прогнозов">
-      <div className="stack">
-        <label>Дата рождения<input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} /></label>
-        <label>Время рождения<input type="time" value={form.birth_time} onChange={(e) => setForm({ ...form, birth_time: e.target.value })} /></label>
-        <label>Место рождения<input placeholder="Москва" value={form.birth_place} onChange={(e) => setForm({ ...form, birth_place: e.target.value })} /></label>
-        <div className="grid-2">
-          <label>Широта<input placeholder="55.7558" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} /></label>
-          <label>Долгота<input placeholder="37.6173" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} /></label>
-        </div>
-        <label>Timezone<input placeholder="Europe/Moscow" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} /></label>
-        <button className="cta" onClick={submit} disabled={loading}>{loading ? 'Считаем карту...' : 'Завершить онбординг'}</button>
-        {error ? <p className="error">{error}</p> : null}
-      </div>
+    <Shell title="Ваша звезда" subtitle="Заполните данные рождения для персональной карты">
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+        <motion.div variants={staggerItem}>
+          <label>
+            Дата рождения
+            <Hint text="Укажите точную дату для составления натальной карты" />
+            <input
+              type="date"
+              value={form.birth_date}
+              onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+            />
+          </label>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <label>
+            Время рождения
+            <Hint text="Если не знаете точного времени, оставьте 12:00" />
+            <input
+              type="time"
+              value={form.birth_time}
+              onChange={(e) => setForm({ ...form, birth_time: e.target.value })}
+            />
+            <span className="input-hint">Если не знаете точно, оставьте пустым</span>
+          </label>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <label>
+            Город рождения
+            <input
+              placeholder="Москва"
+              value={form.birth_place}
+              onChange={(e) => setForm({ ...form, birth_place: e.target.value })}
+            />
+          </label>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <div className="grid-2">
+            <label>
+              Широта
+              <input
+                placeholder="55.7558"
+                value={form.latitude}
+                onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                inputMode="decimal"
+              />
+            </label>
+            <label>
+              Долгота
+              <input
+                placeholder="37.6173"
+                value={form.longitude}
+                onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                inputMode="decimal"
+              />
+            </label>
+          </div>
+          <span className="input-hint">Координаты определяются автоматически по городу</span>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <label>
+            Часовой пояс
+            <input
+              placeholder="Europe/Moscow"
+              value={form.timezone}
+              onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+            />
+          </label>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <button className="cta" onClick={submit} disabled={loading || !canSubmit}>
+            {loading ? 'Считаем карту...' : 'Продолжить'}
+          </button>
+        </motion.div>
+
+        {error && (
+          <motion.p className="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {error}
+          </motion.p>
+        )}
+      </motion.div>
     </Shell>
   );
 }
 
+/* ===== Dashboard ===== */
 function Dashboard({ onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboarding }) {
   const [compatLink, setCompatLink] = useState('');
+  const [compatLoading, setCompatLoading] = useState(false);
   const [error, setError] = useState('');
 
   const createCompatLink = async () => {
     setError('');
+    setCompatLoading(true);
     try {
       const invite = await apiRequest('/v1/compat/invites', {
         method: 'POST',
@@ -124,31 +246,86 @@ function Dashboard({ onOpenStories, onOpenTarot, onOpenWishlist, onResetOnboardi
       setCompatLink(url);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setCompatLoading(false);
     }
   };
 
+  const menuItems = [
+    {
+      icon: '\u2728',
+      label: 'Моя звезда',
+      hint: 'Ежедневный прогноз и энергия',
+      action: onOpenStories
+    },
+    {
+      icon: '\uD83D\uDC9C',
+      label: 'Наше созвездие',
+      hint: 'Проверьте совместимость',
+      action: createCompatLink
+    },
+    {
+      icon: '\uD83C\uDFB4',
+      label: 'Таро-расклад',
+      hint: 'Расклад на 3 карты',
+      action: onOpenTarot
+    },
+    {
+      icon: '\uD83C\uDF81',
+      label: 'Карта желаний',
+      hint: 'Создайте и делитесь',
+      action: onOpenWishlist
+    }
+  ];
+
   return (
-    <Shell title="AstroBot" subtitle="Натал, Таро, Совместимость, Wishlist">
-      <div className="card-grid">
-        <button className="menu-btn" onClick={onOpenStories}>Истории дня</button>
-        <button className="menu-btn" onClick={onOpenTarot}>Таро-расклад</button>
-        <button className="menu-btn" onClick={createCompatLink}>Совместимость</button>
-        <button className="menu-btn" onClick={onOpenWishlist}>Wishlist</button>
-      </div>
+    <Shell title="Созвездие" subtitle="Платформа, где связи становятся видимыми.">
+      <motion.div className="card-grid" variants={staggerContainer} initial="initial" animate="animate">
+        {menuItems.map((item, idx) => (
+          <motion.button
+            key={idx}
+            className="menu-btn"
+            onClick={item.action}
+            variants={staggerItem}
+            whileTap={{ scale: 0.97 }}
+            disabled={item.label === 'Наше созвездие' && compatLoading}
+          >
+            <span className="menu-icon">{item.icon}</span>
+            <span className="menu-text">
+              <span>{item.label}</span>
+              <span className="menu-hint">{item.hint}</span>
+            </span>
+          </motion.button>
+        ))}
+      </motion.div>
 
-      {compatLink ? (
-        <>
-          <p className="link-box">{compatLink}</p>
-          <button className="ghost" onClick={() => shareLink(compatLink, 'Проверь нашу совместимость 💫')}>Поделиться ссылкой</button>
-        </>
-      ) : null}
+      <AnimatePresence>
+        {compatLink && (
+          <motion.div
+            className="story-card"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <p className="section-title">Ссылка для партнёра</p>
+            <p className="link-box">{compatLink}</p>
+            <button className="ghost" onClick={() => shareLink(compatLink, 'Проверь нашу совместимость \u{1F4AB}')}>
+              Поделиться созвездием
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {error ? <p className="error">{error}</p> : null}
-      <button className="ghost" onClick={onResetOnboarding}>Изменить данные рождения</button>
+      {error && <p className="error">{error}</p>}
+
+      <button className="profile-toggle" onClick={onResetOnboarding}>
+        Мой профиль &#x25BE;
+      </button>
     </Shell>
   );
 }
 
+/* ===== Stories (Daily Forecast) ===== */
 function Stories({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -162,32 +339,50 @@ function Stories({ onBack }) {
   }, []);
 
   return (
-    <Shell title="История дня" subtitle="Персональный ежедневный прогноз" action={<button className="ghost" onClick={onBack}>Назад</button>}>
-      {loading ? <p>Загрузка...</p> : null}
-      {error ? <p className="error">{error}</p> : null}
-      {forecast ? (
-        <motion.article className="story-card" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-          <small>{forecast.date}</small>
-          <h2>Энергия {forecast.energy_score}/100</h2>
-          <p>{forecast.summary}</p>
-          <div className="chip-row">
-            <span>{forecast.payload.sun_sign}</span>
-            <span>{forecast.payload.moon_sign}</span>
-            <span>{forecast.payload.rising_sign}</span>
-          </div>
-        </motion.article>
-      ) : null}
+    <Shell title="Моя звезда" subtitle="Персональный ежедневный прогноз" onBack={onBack}>
+      {loading && <p className="loading-text">Читаем звёзды...</p>}
+      {error && <p className="error">{error}</p>}
+
+      {forecast && (
+        <motion.div
+          className="stack"
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+        >
+          <motion.div variants={staggerItem}>
+            <div className="energy-circle" style={{ '--energy-pct': `${forecast.energy_score}%` }}>
+              <span className="energy-value">{forecast.energy_score}</span>
+            </div>
+            <p style={{ textAlign: 'center', marginTop: 8, fontSize: '0.85rem' }}>Энергия дня</p>
+          </motion.div>
+
+          <motion.article className="story-card" variants={staggerItem}>
+            <small>{forecast.date}</small>
+            <p>{forecast.summary}</p>
+          </motion.article>
+
+          <motion.div className="chip-row" variants={staggerItem} style={{ justifyContent: 'center' }}>
+            {forecast.payload?.sun_sign && <span>&#x2600; {forecast.payload.sun_sign}</span>}
+            {forecast.payload?.moon_sign && <span>&#x263D; {forecast.payload.moon_sign}</span>}
+            {forecast.payload?.rising_sign && <span>&#x2191; {forecast.payload.rising_sign}</span>}
+          </motion.div>
+        </motion.div>
+      )}
     </Shell>
   );
 }
 
+/* ===== Tarot ===== */
 function Tarot({ onBack }) {
   const [question, setQuestion] = useState('');
   const [reading, setReading] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const draw = async () => {
     setError('');
+    setLoading(true);
     try {
       const data = await apiRequest('/v1/tarot/draw', {
         method: 'POST',
@@ -196,31 +391,62 @@ function Tarot({ onBack }) {
       setReading(data);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Shell title="Таро" subtitle="Расклад на 3 карты" action={<button className="ghost" onClick={onBack}>Назад</button>}>
-      <label>Вопрос<input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="На чем сфокусироваться сегодня?" /></label>
-      <button className="cta" onClick={draw}>Сделать расклад</button>
-      {error ? <p className="error">{error}</p> : null}
+    <Shell title="Таро-расклад" subtitle="Задайте вопрос и вытяните 3 карты" onBack={onBack}>
+      <div className="stack">
+        <label>
+          Ваш вопрос
+          <Hint text="Сформулируйте открытый вопрос, избегая &laquo;да/нет&raquo;" />
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="На чём сфокусироваться сегодня?"
+          />
+          <span className="input-hint">Можно оставить пустым для общего расклада</span>
+        </label>
 
-      {reading ? (
-        <div className="item-grid">
+        <button className="cta" onClick={draw} disabled={loading}>
+          {loading ? 'Тасуем карты...' : 'Сделать расклад'}
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      {reading && (
+        <motion.div
+          className="stack"
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          style={{ gap: 12 }}
+        >
+          <p className="section-title">Ваш расклад</p>
           {reading.cards.map((card, idx) => (
-            <motion.article key={`${card.card_name}-${idx}`} className="item-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08 }}>
-              <strong>{card.position}. {card.slot_label}</strong>
-              <h3>{card.card_name}</h3>
-              <span>{card.is_reversed ? 'Перевернутая' : 'Прямая'}</span>
-              <p>{card.meaning}</p>
+            <motion.article
+              key={`${card.card_name}-${idx}`}
+              className="tarot-card"
+              variants={staggerItem}
+            >
+              <span className="tarot-position">{card.slot_label}</span>
+              <span className="tarot-name">{card.card_name}</span>
+              <span className={`tarot-orientation ${card.is_reversed ? 'reversed' : 'upright'}`}>
+                {card.is_reversed ? '\u21BB Перевёрнутая' : '\u2191 Прямая'}
+              </span>
+              <p className="tarot-meaning">{card.meaning}</p>
             </motion.article>
           ))}
-        </div>
-      ) : null}
+        </motion.div>
+      )}
     </Shell>
   );
 }
 
+/* ===== Compatibility Landing ===== */
 function CompatibilityLanding({ token }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -249,32 +475,119 @@ function CompatibilityLanding({ token }) {
         body: JSON.stringify({ ttl_days: 7, max_uses: 1 })
       });
       const link = buildStartAppLink(invite.token);
-      shareLink(link, 'Твоя очередь проверить совместимость 💫');
+      shareLink(link, 'Твоя очередь проверить совместимость \u{1F4AB}');
     } catch (e) {
       setError(e.message);
     }
   };
 
   return (
-    <Shell title="Астрология встречи" subtitle="Откройте совместимость по приглашению">
-      <motion.div className="hero" animate={{ rotate: [0, 3, -3, 0] }} transition={{ repeat: Infinity, duration: 4 }}>💫</motion.div>
-      <button className="cta" onClick={start} disabled={loading}>{loading ? 'Считаем...' : 'Узнать совместимость'}</button>
-      {error ? <p className="error">{error}</p> : null}
-      {result ? (
-        <motion.section className="story-card" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h2>{result.score}% совпадение</h2>
-          <p>{result.summary}</p>
-          <button className="ghost" onClick={shareOwnLink}>Поделиться своей ссылкой</button>
-        </motion.section>
-      ) : null}
+    <Shell title="Наше созвездие" subtitle="Узнайте вашу астрологическую совместимость">
+      {!result && (
+        <>
+          <div className="compat-hero">
+            <div className="compat-constellation">
+              <motion.div
+                className="compat-star"
+                animate={{ y: [-4, 4, -4] }}
+                transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+              />
+              <motion.div
+                className="compat-star"
+                animate={{ y: [3, -5, 3] }}
+                transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut', delay: 0.5 }}
+              />
+              <motion.div
+                className="compat-star"
+                animate={{ y: [-3, 4, -3] }}
+                transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut', delay: 1 }}
+              />
+            </div>
+          </div>
+
+          <button className="cta" onClick={start} disabled={loading}>
+            {loading ? 'Считаем звёзды...' : 'Узнать совместимость'}
+          </button>
+        </>
+      )}
+
+      {error && <p className="error">{error}</p>}
+
+      {result && (
+        <motion.div
+          className="stack"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="compat-hero">
+            <div className="compat-constellation">
+              <motion.div
+                className="compat-star"
+                animate={{ y: [-4, 4, -4] }}
+                transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+              />
+              <motion.div
+                className="compat-star"
+                animate={{ y: [3, -5, 3] }}
+                transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut', delay: 0.5 }}
+              />
+              <motion.div
+                className="compat-star"
+                animate={{ y: [-3, 4, -3] }}
+                transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut', delay: 1 }}
+              />
+            </div>
+            <motion.span
+              className="compat-score"
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+            >
+              {result.score}%
+            </motion.span>
+            <span className="compat-score-label">Совместимость</span>
+          </div>
+
+          {result.summary && (
+            <div className="story-card">
+              <p>{result.summary}</p>
+            </div>
+          )}
+
+          {result.strengths && result.strengths.length > 0 && (
+            <motion.div className="compat-section" variants={staggerItem}>
+              <h3>Ваши сильные стороны</h3>
+              <ul>
+                {result.strengths.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            </motion.div>
+          )}
+
+          {result.growth_areas && result.growth_areas.length > 0 && (
+            <motion.div className="compat-section" variants={staggerItem}>
+              <h3>Точки роста</h3>
+              <ul>
+                {result.growth_areas.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            </motion.div>
+          )}
+
+          <button className="ghost" onClick={shareOwnLink}>
+            Поделиться созвездием
+          </button>
+        </motion.div>
+      )}
     </Shell>
   );
 }
 
+/* ===== Wishlist Landing ===== */
 function WishlistLanding({ token, onBack }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [reserved, setReserved] = useState('');
+  const [reserving, setReserving] = useState('');
 
   useEffect(() => {
     apiRequest(`/v1/public/wishlists/${token}`)
@@ -284,6 +597,7 @@ function WishlistLanding({ token, onBack }) {
 
   const reserve = async (itemId) => {
     setError('');
+    setReserving(itemId);
     try {
       await apiRequest(`/v1/public/wishlists/${token}/items/${itemId}/reserve`, {
         method: 'POST',
@@ -294,50 +608,102 @@ function WishlistLanding({ token, onBack }) {
       setData(refreshed);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setReserving('');
     }
   };
 
   return (
-    <Shell title="Wishlist" subtitle="Витрина желаний" action={onBack ? <button className="ghost" onClick={onBack}>Назад</button> : null}>
-      {error ? <p className="error">{error}</p> : null}
-      {!data ? <p>Загрузка...</p> : null}
+    <Shell
+      title="Карта желаний"
+      subtitle={data ? data.title : 'Загрузка...'}
+      onBack={onBack}
+    >
+      {error && <p className="error">{error}</p>}
+      {!data && !error && <p className="loading-text">Загружаем желания...</p>}
 
-      {data ? (
+      {data && (
         <>
-          <h2>{data.title}</h2>
-          <div className="item-grid">
+          <motion.div
+            className="item-grid"
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+          >
             {data.items.map((item) => (
-              <motion.article key={item.id} className="item-card" whileHover={{ y: -3 }}>
+              <motion.article
+                key={item.id}
+                className="item-card"
+                variants={staggerItem}
+                whileTap={{ scale: 0.97 }}
+              >
                 <strong>{item.title}</strong>
-                <span>{item.budget_cents ? `${item.budget_cents / 100} ₽` : 'Без бюджета'}</span>
-                <span className={item.status === 'reserved' ? 'status status-reserved' : 'status'}>
+                <span className="item-price">
+                  {item.budget_cents ? `${(item.budget_cents / 100).toLocaleString('ru-RU')} \u20BD` : 'Без бюджета'}
+                </span>
+                <span className={`status-badge ${item.status === 'reserved' ? 'reserved' : 'free'}`}>
                   {item.status === 'reserved' ? 'Забронировано' : 'Свободно'}
                 </span>
-                <button disabled={item.status === 'reserved'} onClick={() => reserve(item.id)}>
-                  Забронировать подарок
+                <button
+                  className={item.status === 'reserved' ? 'ghost' : 'cta'}
+                  disabled={item.status === 'reserved' || reserving === item.id}
+                  onClick={() => reserve(item.id)}
+                  style={{ padding: '10px 14px', fontSize: '0.82rem' }}
+                >
+                  {reserving === item.id ? 'Бронируем...' : item.status === 'reserved' ? 'Уже занято' : 'Забронировать'}
                 </button>
               </motion.article>
             ))}
-          </div>
-        </>
-      ) : null}
+          </motion.div>
 
-      {reserved ? <motion.div className="confetti" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>🎉 Подарок забронирован</motion.div> : null}
+          <button
+            className="ghost"
+            onClick={() => shareLink(
+              buildStartAppLink(token),
+              'Посмотри мою карту желаний \u{1F381}'
+            )}
+          >
+            Поделиться созвездием
+          </button>
+        </>
+      )}
+
+      <AnimatePresence>
+        {reserved && (
+          <motion.div className="confetti" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            Подарок забронирован!
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Shell>
   );
 }
 
+/* ===== Local Wishlist Info ===== */
 function LocalWishlistInfo({ onBack }) {
   return (
-    <Shell title="Wishlist" subtitle="Создайте список в API и делитесь wl_ ссылкой" action={<button className="ghost" onClick={onBack}>Назад</button>}>
-      <p>Создание карточек wishlist пока через API:</p>
-      <code>POST /v1/wishlists</code>
-      <code>POST /v1/wishlists/{'{id}'}/items</code>
-      <p>Открытие публичной витрины: <code>startapp=wl_...</code></p>
+    <Shell title="Карта желаний" subtitle="Создайте список и делитесь ссылкой" onBack={onBack}>
+      <div className="story-card">
+        <h3>Как это работает?</h3>
+        <p>Создайте список желаний через API и поделитесь ссылкой с друзьями. Они смогут забронировать подарки для вас.</p>
+      </div>
+
+      <div className="stack" style={{ gap: 8 }}>
+        <p className="section-title">API эндпоинты</p>
+        <code>POST /v1/wishlists</code>
+        <code>POST /v1/wishlists/{'{id}'}/items</code>
+      </div>
+
+      <div className="story-card">
+        <p style={{ fontSize: '0.85rem' }}>
+          Для открытия публичной витрины используйте параметр <code style={{ display: 'inline', padding: '2px 6px', borderRadius: 6 }}>startapp=wl_...</code>
+        </p>
+      </div>
     </Shell>
   );
 }
 
+/* ===== App Root ===== */
 export default function App() {
   const startParam = useStartParam();
   const [view, setView] = useState('dashboard');
