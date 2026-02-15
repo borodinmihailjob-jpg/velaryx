@@ -85,7 +85,7 @@ function Onboarding({ onComplete }) {
       localStorage.setItem('onboarding_complete', '1');
       onComplete(chart);
     } catch (e) {
-      setError(e.message);
+      setError(String(e?.message || e));
     } finally {
       setLoading(false);
     }

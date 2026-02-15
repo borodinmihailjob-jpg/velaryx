@@ -8,7 +8,7 @@ function readInitDataFromUrl() {
     const hashParams = new URLSearchParams(hash);
     const fromHash = hashParams.get('tgWebAppData');
     if (fromHash) {
-      return decodeURIComponent(fromHash);
+      return fromHash;
     }
   } catch {
     // ignore
@@ -18,7 +18,7 @@ function readInitDataFromUrl() {
     const searchParams = new URLSearchParams(window.location.search);
     const fromSearch = searchParams.get('tgWebAppData');
     if (fromSearch) {
-      return decodeURIComponent(fromSearch);
+      return fromSearch;
     }
   } catch {
     // ignore
