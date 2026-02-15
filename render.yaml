@@ -35,6 +35,8 @@ services:
         sync: false
       - key: BOT_USERNAME
         sync: false
+      - key: PYTHON_VERSION
+        value: 3.12.8
       - key: INTERNAL_API_KEY
         sync: false
       - key: MINI_APP_NAME
@@ -62,6 +64,8 @@ services:
         sync: false
       - key: BOT_USERNAME
         sync: false
+      - key: PYTHON_VERSION
+        value: 3.12.8
       - key: INTERNAL_API_KEY
         sync: false
       - key: MINI_APP_NAME
