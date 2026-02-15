@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Astrology engine provider:
     # - "swisseph": local Swiss Ephemeris engine
     # - "astrologyapi": external provider + local fallback
-    astrology_provider: str = "swisseph"
+    astrology_provider: str = "astrologyapi"
     astrologyapi_base_url: str = "https://json.astrologyapi.com/v1"
     astrologyapi_user_id: str | None = None
     astrologyapi_api_key: str | None = None

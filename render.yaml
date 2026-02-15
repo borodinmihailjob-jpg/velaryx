@@ -52,7 +52,7 @@ services:
       - key: CORS_ORIGINS_RAW
         sync: false
       - key: ASTROLOGY_PROVIDER
-        value: swisseph
+        value: astrologyapi
       - key: ASTROLOGYAPI_BASE_URL
         value: https://json.astrologyapi.com/v1
       - key: ASTROLOGYAPI_USER_ID
