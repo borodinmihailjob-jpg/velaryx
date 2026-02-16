@@ -67,6 +67,8 @@ alembic upgrade head
 - `OPENROUTER_MODEL`
 - `OPENROUTER_FALLBACK_MODELS_RAW` (comma-separated models)
 - `LLM_PROVIDER` (`openrouter`, `gemini`, `auto`)
+- For OpenRouter free models, set privacy policy in dashboard to allow free-model routing:
+- `https://openrouter.ai/settings/privacy`
 4. Keep production security flags:
 - `REQUIRE_TELEGRAM_INIT_DATA=true`
 - `ALLOW_INSECURE_DEV_AUTH=false`

@@ -40,19 +40,17 @@ def _request_openrouter_text(prompt: str, temperature: float, max_tokens: int) -
         "X-Title": "AstroBot",
     }
     retry_attempts = max(1, settings.openrouter_retry_attempts)
+    instruction_prefix = (
+        "Ты профессиональный астролог и таролог. "
+        "Отвечай только на русском языке. "
+        "Пиши по делу, без markdown, без дисклеймеров."
+    )
 
     for model in settings.openrouter_models():
         payload = {
             "model": model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Ты профессиональный астролог и таролог. Отвечай только на русском языке. "
-                        "Пиши по делу, без markdown, без дисклеймеров."
-                    ),
-                },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": f"{instruction_prefix}\n\n{prompt}"},
             ],
             "temperature": temperature,
             "max_tokens": max_tokens,
