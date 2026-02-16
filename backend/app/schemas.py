@@ -179,3 +179,12 @@ class ComboInsightResponse(BaseModel):
 class ReportLinkResponse(BaseModel):
     url: str
     expires_at: datetime
+
+
+class TelemetryEventRequest(BaseModel):
+    event_name: str = Field(min_length=1, max_length=100)
+    payload: dict = Field(default_factory=dict)
+
+
+class TelemetryEventResponse(BaseModel):
+    ok: bool = True

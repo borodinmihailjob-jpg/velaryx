@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -6,6 +8,7 @@ from ..database import get_db
 from ..dependencies import current_user_dep
 
 router = APIRouter(prefix="/v1/natal", tags=["natal"])
+logger = logging.getLogger("astrobot.natal")
 
 
 @router.post("/profile", response_model=schemas.BirthProfileResponse)
@@ -14,6 +17,16 @@ def create_profile(
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
 ):
+    logger.info(
+        "Ввод данных натала | user_tg_id=%s | дата=%s | время=%s | место=%s | lat=%.5f | lon=%.5f | tz=%s",
+        user.tg_user_id,
+        payload.birth_date,
+        payload.birth_time,
+        payload.birth_place,
+        payload.latitude,
+        payload.longitude,
+        payload.timezone,
+    )
     profile = services.create_birth_profile(
         db=db,
         user_id=user.id,
@@ -41,6 +54,11 @@ def calculate_natal(
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
 ):
+    logger.info(
+        "Запуск расчёта натальной карты | user_tg_id=%s | profile_id=%s",
+        user.tg_user_id,
+        payload.profile_id,
+    )
     chart = services.calculate_and_store_natal_chart(db=db, user_id=user.id, profile_id=payload.profile_id)
     return schemas.NatalChartResponse(
         id=chart.id,

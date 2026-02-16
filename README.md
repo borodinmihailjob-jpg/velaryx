@@ -12,11 +12,13 @@ Telegram bot + Mini App for astrology and tarot.
 - Natal profile + full natal map (`/v1/natal/*`)
 - Daily forecast + stories mode (`/v1/forecast/*`)
 - Tarot spreads endpoint (`/v1/tarot/*`)
-- AI interpretation for tarot (OpenRouter/Gemini with fallback)
+- AI interpretation for tarot (local Ollama; on failure returns mystical fallback text)
 - Telegram Mini App `startapp` routing (`sc_*`)
 - Telegram `initData` signature validation on backend
 
 ## Local Development
+
+### Quick Start (without LLM)
 1. Copy env:
 ```bash
 cp .env.example .env
@@ -27,6 +29,45 @@ docker compose up --build
 ```
 3. API docs:
 - http://localhost:8000/docs
+
+### With Local LLM (recommended)
+
+**Option 1: Local Ollama (Docker)**
+```bash
+ollama serve
+ollama pull qwen2.5:7b
+# Use OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+**Option 2: Ollama through Tailscale Funnel (stable remote access)**
+- ✅ Access your Mac's Ollama from anywhere
+- ✅ Tarot keeps working with local mystical fallback if LLM fails/timeouts
+- ✅ Production-ready setup
+
+See **[TAILSCALE_SETUP.md](TAILSCALE_SETUP.md)** for complete guide.
+
+Quick setup:
+```bash
+# 1. Setup Ollama proxy on Mac
+cd ollama-proxy
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Install Tailscale and enable Funnel
+brew install tailscale
+sudo tailscale up
+tailscale funnel 8888
+
+# 3. Update .env with your Tailscale URL
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=https://your-macbook.tail1234.ts.net
+```
+
+Full documentation:
+- [TAILSCALE_SETUP.md](TAILSCALE_SETUP.md) - Step-by-step setup guide
+- [ollama-proxy/README.md](ollama-proxy/README.md) - Proxy configuration
+- [ollama-proxy/COMMANDS.md](ollama-proxy/COMMANDS.md) - Command reference
 
 ## Database Migrations
 - Local manual run:
@@ -58,15 +99,12 @@ alembic upgrade head
 - `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`
 - `TAROT_PROVIDER=tarotapi_dev`
 - Optional LLM for tarot explanations:
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL` (default `gemini-2.0-flash`)
-- OpenRouter alternative:
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_MODEL`
-- `OPENROUTER_FALLBACK_MODELS_RAW` (comma-separated models)
-- `LLM_PROVIDER` (`openrouter`, `gemini`, `auto`)
-- For OpenRouter free models, set privacy policy in dashboard to allow free-model routing:
-- `https://openrouter.ai/settings/privacy`
+- Local Ollama (default in `.env.example`):
+- `OLLAMA_MODEL` (default `qwen2.5:7b`)
+- `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`)
+- If backend runs outside Docker, use `OLLAMA_BASE_URL=http://localhost:11434`
+- `OLLAMA_TIMEOUT_SECONDS`
+- `LLM_PROVIDER=ollama`
 4. Keep production security flags:
 - `REQUIRE_TELEGRAM_INIT_DATA=true`
 - `ALLOW_INSECURE_DEV_AUTH=false`

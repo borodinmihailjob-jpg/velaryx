@@ -69,6 +69,10 @@ class CityResult(BaseModel):
     timezone: str
 
 
+class TimezoneResult(BaseModel):
+    timezone: str
+
+
 @router.get("/cities", response_model=list[CityResult])
 def search_cities(q: str = Query(min_length=1, max_length=100)):
     query = q.lower().strip()
@@ -89,3 +93,12 @@ def search_cities(q: str = Query(min_length=1, max_length=100)):
             break
 
     return results
+
+
+@router.get("/timezone", response_model=TimezoneResult)
+def detect_timezone(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+):
+    timezone = _tf.timezone_at(lat=latitude, lng=longitude) or "UTC"
+    return TimezoneResult(timezone=timezone)

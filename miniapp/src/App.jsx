@@ -7,6 +7,7 @@ import { apiRequest } from './api';
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
 const TAROT_LOADING_GIF = import.meta.env.VITE_TAROT_LOADING_GIF || '/tarot-loader.gif';
+const NATAL_LOADING_GIF = import.meta.env.VITE_NATAL_LOADING_GIF || '/natal-loader.gif';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20, scale: 0.98 },
@@ -52,6 +53,30 @@ const TZ_LABELS = {
   'Europe/Chisinau': 'Кишинёв (UTC+2)',
   'UTC': 'UTC'
 };
+
+const VIEW_TELEMETRY_EVENTS = {
+  natal: 'open_natal_screen',
+  stories: 'open_stories_screen',
+  tarot: 'open_tarot_screen'
+};
+
+const NATAL_LOADING_HINTS = [
+  'Сверяем дыхание Луны и линию твоего рождения...',
+  'Дом за домом карта проступает из звёздной пыли...',
+  'Планеты занимают свои места, дождись завершения круга...',
+  'Тонкие аспекты уже сплетаются в единый узор...',
+  'Ещё немного — послание карты почти готово...'
+];
+
+function toNumber(value) {
+  if (typeof value !== 'string') return Number(value);
+  return Number(value.replace(',', '.').trim());
+}
+
+function timezoneLabel(timezone) {
+  if (!timezone) return 'UTC';
+  return TZ_LABELS[timezone] || timezone.replaceAll('_', ' ');
+}
 
 function buildStartAppLink(token) {
   return `https://t.me/${BOT_USERNAME}/${APP_NAME}?startapp=${token}`;
@@ -139,32 +164,47 @@ function Onboarding({ onComplete }) {
 
   const [citySuggestions, setCitySuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [citySearchStatus, setCitySearchStatus] = useState('idle');
   const [citySelected, setCitySelected] = useState(false);
   const [showManualCoords, setShowManualCoords] = useState(false);
-  const debounceRef = useRef(null);
+  const cityDebounceRef = useRef(null);
+  const timezoneDebounceRef = useRef(null);
+  const cityRequestRef = useRef(0);
   const wrapperRef = useRef(null);
 
   const searchCities = useCallback((query) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (query.length < 1) {
+    const normalizedQuery = query.trim();
+    if (cityDebounceRef.current) clearTimeout(cityDebounceRef.current);
+    if (normalizedQuery.length < 1) {
       setCitySuggestions([]);
       setShowSuggestions(false);
+      setCitySearchStatus('idle');
       return;
     }
 
-    debounceRef.current = setTimeout(async () => {
+    setCitySearchStatus('loading');
+    cityDebounceRef.current = setTimeout(async () => {
+      const requestId = cityRequestRef.current + 1;
+      cityRequestRef.current = requestId;
       try {
-        const results = await apiRequest(`/v1/geo/cities?q=${encodeURIComponent(query)}`);
+        const results = await apiRequest(`/v1/geo/cities?q=${encodeURIComponent(normalizedQuery)}`);
+        if (requestId !== cityRequestRef.current) return;
         setCitySuggestions(results);
-        setShowSuggestions(results.length > 0);
+        const hasResults = results.length > 0;
+        setShowSuggestions(hasResults);
+        setCitySearchStatus(hasResults ? 'found' : 'not_found');
+        if (!hasResults) setShowManualCoords(true);
       } catch {
+        if (requestId !== cityRequestRef.current) return;
         setCitySuggestions([]);
+        setShowSuggestions(false);
+        setCitySearchStatus('error');
       }
     }, 300);
   }, []);
 
   const handleCityInput = (value) => {
-    setForm((prev) => ({ ...prev, birth_place: value }));
+    setForm((prev) => ({ ...prev, birth_place: value, latitude: '', longitude: '' }));
     setCitySelected(false);
     searchCities(value);
   };
@@ -178,8 +218,22 @@ function Onboarding({ onComplete }) {
       timezone: city.timezone
     }));
     setCitySelected(true);
+    setCitySearchStatus('found');
+    setShowManualCoords(false);
     setShowSuggestions(false);
     setCitySuggestions([]);
+  };
+
+  const setLatitude = (value) => {
+    setCitySelected(false);
+    setShowManualCoords(true);
+    setForm((prev) => ({ ...prev, latitude: value }));
+  };
+
+  const setLongitude = (value) => {
+    setCitySelected(false);
+    setShowManualCoords(true);
+    setForm((prev) => ({ ...prev, longitude: value }));
   };
 
   useEffect(() => {
@@ -196,7 +250,47 @@ function Onboarding({ onComplete }) {
     };
   }, []);
 
-  const canSubmit = form.birth_date && form.birth_place && form.latitude && form.longitude && form.timezone;
+  useEffect(() => {
+    if (timezoneDebounceRef.current) clearTimeout(timezoneDebounceRef.current);
+    const lat = toNumber(form.latitude);
+    const lon = toNumber(form.longitude);
+    const hasValidCoords = Number.isFinite(lat)
+      && Number.isFinite(lon)
+      && lat >= -90
+      && lat <= 90
+      && lon >= -180
+      && lon <= 180;
+
+    if (!hasValidCoords || citySelected) return;
+
+    timezoneDebounceRef.current = setTimeout(async () => {
+      try {
+        const tzResult = await apiRequest(`/v1/geo/timezone?latitude=${lat}&longitude=${lon}`);
+        setForm((prev) => ({ ...prev, timezone: tzResult.timezone || 'UTC' }));
+      } catch {
+        // ignore and keep the timezone selected by user/browser
+      }
+    }, 350);
+
+    return () => {
+      if (timezoneDebounceRef.current) clearTimeout(timezoneDebounceRef.current);
+    };
+  }, [form.latitude, form.longitude, citySelected]);
+
+  const timezoneOptions = useMemo(() => {
+    if (!form.timezone || TIMEZONES.includes(form.timezone)) return TIMEZONES;
+    return [form.timezone, ...TIMEZONES];
+  }, [form.timezone]);
+
+  const latitude = toNumber(form.latitude);
+  const longitude = toNumber(form.longitude);
+  const hasValidCoordinates = Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
+  const canSubmit = form.birth_date && form.birth_place && hasValidCoordinates && form.timezone;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -209,8 +303,8 @@ function Onboarding({ onComplete }) {
           birth_date: form.birth_date,
           birth_time: form.birth_time || '12:00',
           birth_place: form.birth_place,
-          latitude: Number(form.latitude),
-          longitude: Number(form.longitude),
+          latitude: latitude,
+          longitude: longitude,
           timezone: form.timezone
         })
       });
@@ -275,15 +369,26 @@ function Onboarding({ onComplete }) {
                   {citySuggestions.map((city) => (
                     <li key={`${city.name}-${city.latitude}-${city.longitude}`} onClick={() => selectCity(city)}>
                       <span className="city-name">{city.name}</span>
-                      <span className="city-tz">{TZ_LABELS[city.timezone] || city.timezone}</span>
+                      <span className="city-tz">{timezoneLabel(city.timezone)}</span>
                     </li>
                   ))}
                 </motion.ul>
               )}
             </AnimatePresence>
 
+            {citySearchStatus === 'loading' && (
+              <span className="input-hint">Ищем город...</span>
+            )}
+            {citySearchStatus === 'error' && (
+              <span className="input-hint city-warning-hint">Поиск временно недоступен. Можно указать координаты вручную.</span>
+            )}
+            {citySearchStatus === 'not_found' && (
+              <motion.div className="city-status city-status-warning" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <p>Такой город не найден. Продолжайте по координатам.</p>
+              </motion.div>
+            )}
             {citySelected && (
-              <span className="input-hint" style={{ color: 'var(--ok)' }}>
+              <span className="input-hint city-success-hint">
                 Координаты и часовой пояс заполнены автоматически
               </span>
             )}
@@ -294,14 +399,15 @@ function Onboarding({ onComplete }) {
           <label>
             Часовой пояс
             <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
-              {TIMEZONES.map((tz) => (
-                <option key={tz} value={tz}>{TZ_LABELS[tz] || tz}</option>
+              {timezoneOptions.map((tz) => (
+                <option key={tz} value={tz}>{timezoneLabel(tz)}</option>
               ))}
             </select>
+            <span className="input-hint">Текущий пояс: {timezoneLabel(form.timezone)}</span>
           </label>
         </motion.div>
 
-        {!showManualCoords && !citySelected && form.birth_place && (
+        {!showManualCoords && !citySelected && form.birth_place && citySearchStatus !== 'not_found' && (
           <motion.div variants={staggerItem}>
             <button className="profile-toggle" onClick={() => setShowManualCoords(true)} type="button">
               Нет моего города? Указать координаты вручную
@@ -311,13 +417,16 @@ function Onboarding({ onComplete }) {
 
         {(showManualCoords || (!citySelected && form.latitude)) && (
           <motion.div variants={staggerItem} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+            <p className="input-hint coords-help">
+              Можно ввести координаты вручную, например: 55.7558 и 37.6173. Часовой пояс обновится автоматически.
+            </p>
             <div className="grid-2">
               <label>
                 Широта
                 <input
                   placeholder="55.7558"
                   value={form.latitude}
-                  onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                  onChange={(e) => setLatitude(e.target.value)}
                   inputMode="decimal"
                 />
               </label>
@@ -326,11 +435,14 @@ function Onboarding({ onComplete }) {
                 <input
                   placeholder="37.6173"
                   value={form.longitude}
-                  onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                  onChange={(e) => setLongitude(e.target.value)}
                   inputMode="decimal"
                 />
               </label>
             </div>
+            {!hasValidCoordinates && form.latitude && form.longitude && (
+              <span className="input-hint city-warning-hint">Проверьте координаты: широта от -90 до 90, долгота от -180 до 180.</span>
+            )}
           </motion.div>
         )}
 
@@ -386,18 +498,108 @@ function NatalChart({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [chart, setChart] = useState(null);
+  const [hintIndex, setHintIndex] = useState(0);
+  const [natalGifFailed, setNatalGifFailed] = useState(false);
+  const [natalGifFallbackTried, setNatalGifFallbackTried] = useState(false);
+
+  const natalLoaderSrc = natalGifFallbackTried ? TAROT_LOADING_GIF : NATAL_LOADING_GIF;
+
+  const loadChart = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setChart(null);
+    setHintIndex(0);
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const data = await apiRequest('/v1/natal/full');
+        setChart(data);
+        setLoading(false);
+        return;
+      } catch (e) {
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+          continue;
+        }
+        const rawMessage = String(e?.message || e || '');
+        const lowered = rawMessage.toLowerCase();
+        setError(
+          lowered.includes('load failed')
+            ? 'Не удалось загрузить натальную карту. Проверьте соединение и попробуйте снова.'
+            : (rawMessage || 'Не удалось загрузить натальную карту.')
+        );
+      }
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    apiRequest('/v1/natal/full')
-      .then(setChart)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+    loadChart();
+  }, [loadChart]);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const intervalId = setInterval(() => {
+      setHintIndex((prev) => (prev + 1) % NATAL_LOADING_HINTS.length);
+    }, 2600);
+    return () => clearInterval(intervalId);
+  }, [loading]);
 
   return (
     <Shell title="Натальная карта" subtitle="Подробный персональный разбор" onBack={onBack}>
-      {loading && <p className="loading-text">Собираем карту...</p>}
-      {error && <p className="error">{error}</p>}
+      {loading && (
+        <motion.div
+          className="natal-loader"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          {!natalGifFailed && natalLoaderSrc ? (
+            <motion.div
+              className="natal-loader-gif-stage"
+              initial={{ opacity: 0.6, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.35 }}
+            >
+              <img
+                className="natal-loader-gif"
+                src={natalLoaderSrc}
+                alt="Natal loading"
+                loading="eager"
+                onError={() => {
+                  if (!natalGifFallbackTried && TAROT_LOADING_GIF && TAROT_LOADING_GIF !== NATAL_LOADING_GIF) {
+                    setNatalGifFallbackTried(true);
+                    return;
+                  }
+                  setNatalGifFailed(true);
+                }}
+              />
+            </motion.div>
+          ) : (
+            <div className="natal-loader-placeholder">🌙</div>
+          )}
+          <p className="natal-loader-title">Читаем звёздный узор...</p>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={hintIndex}
+              className="natal-loader-hint"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+            >
+              {NATAL_LOADING_HINTS[hintIndex]}
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {error && (
+        <div className="stack">
+          <p className="error">{error}</p>
+          <button className="ghost" onClick={loadChart}>Повторить загрузку</button>
+        </div>
+      )}
 
       {chart && (
         <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
@@ -617,6 +819,7 @@ function Tarot({ onBack }) {
 export default function App() {
   const startParam = useStartParam();
   const [view, setView] = useState('dashboard');
+  const lastTrackedViewRef = useRef('');
 
   const onboardingDone = useMemo(() => localStorage.getItem('onboarding_complete') === '1', []);
   const [hasOnboarding, setHasOnboarding] = useState(onboardingDone);
@@ -631,6 +834,20 @@ export default function App() {
       setView('onboarding');
     }
   }, [startParam, onboardingDone]);
+
+  useEffect(() => {
+    const eventName = VIEW_TELEMETRY_EVENTS[view];
+    if (!eventName) return;
+    if (lastTrackedViewRef.current === view) return;
+    lastTrackedViewRef.current = view;
+
+    apiRequest('/v1/telemetry/event', {
+      method: 'POST',
+      body: JSON.stringify({ event_name: eventName })
+    }).catch(() => {
+      // ignore telemetry errors
+    });
+  }, [view]);
 
   if (view === 'onboarding' || !hasOnboarding) {
     return <Onboarding onComplete={() => { setHasOnboarding(true); setView('dashboard'); }} />;

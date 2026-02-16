@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -9,161 +11,62 @@ import httpx
 from .config import settings
 
 logger = logging.getLogger(__name__)
+INSTRUCTION_PREFIX = (
+    "Ты профессиональный астролог и таролог. "
+    "Отвечай только на русском языке. "
+    "Пиши по делу, без markdown, без дисклеймеров."
+)
 
 
 def llm_provider_label() -> str | None:
-    provider = settings.llm_provider.lower().strip()
-
-    if provider == "openrouter" and settings.openrouter_api_key:
-        return f"openrouter:{settings.openrouter_model}"
-    if provider == "gemini" and settings.gemini_api_key:
-        return f"gemini:{settings.gemini_model}"
-    if provider == "auto":
-        if settings.openrouter_api_key:
-            return f"openrouter:{settings.openrouter_model}"
-        if settings.gemini_api_key:
-            return f"gemini:{settings.gemini_model}"
-    return None
+    model = settings.ollama_model.strip()
+    if not model:
+        return None
+    return f"ollama:{model}"
 
 
-# ── OpenRouter (OpenAI-compatible) ──────────────────────────────────
+# ── Ollama (local) ─────────────────────────────────────────────────
 
-def _request_openrouter_text(prompt: str, temperature: float, max_tokens: int) -> str | None:
-    api_key = settings.openrouter_api_key
-    if not api_key:
+def _request_ollama_text(prompt: str, temperature: float, max_tokens: int) -> str | None:
+    model = settings.ollama_model.strip()
+    if not model:
         return None
 
-    url = f"{settings.openrouter_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer": "https://astrobot.app",
-        "X-Title": "AstroBot",
-    }
-    retry_attempts = max(1, settings.openrouter_retry_attempts)
-    instruction_prefix = (
-        "Ты профессиональный астролог и таролог. "
-        "Отвечай только на русском языке. "
-        "Пиши по делу, без markdown, без дисклеймеров."
-    )
-
-    for model in settings.openrouter_models():
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": f"{instruction_prefix}\n\n{prompt}"},
-            ],
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
+    payload = {
+        "model": model,
+        "prompt": f"{INSTRUCTION_PREFIX}\n\n{prompt}",
+        "stream": False,
+        "options": {
             "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        for attempt in range(1, retry_attempts + 1):
-            try:
-                response = httpx.post(
-                    url,
-                    headers=headers,
-                    json=payload,
-                    timeout=settings.openrouter_timeout_seconds,
-                )
-                response.raise_for_status()
-                data = response.json()
-                if not isinstance(data, dict):
-                    break
-
-                choices = data.get("choices")
-                if not isinstance(choices, list) or not choices:
-                    break
-
-                message = choices[0].get("message", {})
-                text = message.get("content", "")
-                if isinstance(text, str) and text.strip():
-                    return text.strip()
-                break
-            except httpx.HTTPStatusError as exc:
-                status = exc.response.status_code if exc.response is not None else -1
-                body = exc.response.text[:300] if exc.response is not None else ""
-                if status == 429 and attempt < retry_attempts:
-                    time.sleep(min(2.0, 0.4 * (2 ** (attempt - 1))))
-                    continue
-                logger.warning(
-                    "OpenRouter request failed model=%s attempt=%s status=%s body=%s",
-                    model,
-                    attempt,
-                    status,
-                    body,
-                )
-                break
-            except Exception as exc:
-                logger.warning("OpenRouter request failed model=%s attempt=%s error=%s", model, attempt, str(exc))
-                break
-    return None
-
-
-# ── Gemini ──────────────────────────────────────────────────────────
-
-def _extract_gemini_text(payload: dict[str, Any]) -> str | None:
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
-        return None
-
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        content = candidate.get("content")
-        if not isinstance(content, dict):
-            continue
-        parts = content.get("parts")
-        if not isinstance(parts, list):
-            continue
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-    return None
-
-
-def _request_gemini_text(prompt: str, temperature: float, max_output_tokens: int) -> str | None:
-    api_key = settings.gemini_api_key
-    if not api_key:
-        return None
-
-    base_url = settings.gemini_base_url.rstrip("/")
-    requested_model = settings.gemini_model.strip()
-    models_to_try = [requested_model]
-    if requested_model != "gemini-2.0-flash":
-        models_to_try.append("gemini-2.0-flash")
-
-    for model in models_to_try:
-        url = f"{base_url}/models/{model}:generateContent"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_output_tokens,
-            },
-        }
-        try:
-            response = httpx.post(
-                url,
-                params={"key": api_key},
-                json=payload,
-                timeout=settings.gemini_timeout_seconds,
-            )
-            response.raise_for_status()
-            data = response.json()
-            if not isinstance(data, dict):
-                continue
-            text = _extract_gemini_text(data)
-            if text:
-                return text
-        except httpx.HTTPStatusError as exc:
-            body = exc.response.text[:250] if exc.response is not None else ""
-            logger.warning("Gemini request failed for model=%s status=%s body=%s", model, exc.response.status_code, body)
-            continue
-        except Exception as exc:  # pragma: no cover
-            logger.warning("Gemini request failed for model=%s error=%s", model, str(exc))
-            continue
+            "num_predict": max_tokens,
+        },
+    }
+    try:
+        response = httpx.post(
+            url,
+            json=payload,
+            timeout=settings.ollama_timeout_seconds,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            return None
+        text = data.get("response")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    except httpx.ReadTimeout:
+        logger.warning(
+            "Ollama request failed model=%s error=timeout after %ss",
+            model,
+            settings.ollama_timeout_seconds,
+        )
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else -1
+        body = exc.response.text[:300] if exc.response is not None else ""
+        logger.warning("Ollama request failed model=%s status=%s body=%s", model, status, body)
+    except Exception as exc:
+        logger.warning("Ollama request failed model=%s error=%s", model, str(exc))
     return None
 
 
@@ -171,24 +74,21 @@ def _request_gemini_text(prompt: str, temperature: float, max_output_tokens: int
 
 def _request_llm_text(prompt: str, temperature: float, max_tokens: int) -> str | None:
     provider = settings.llm_provider.lower().strip()
+    started_at = time.time()
 
-    if provider == "openrouter":
-        result = _request_openrouter_text(prompt, temperature, max_tokens)
-        if result:
-            return result
-        return _request_gemini_text(prompt, temperature, max_tokens)
+    if provider and provider != "ollama":
+        logger.warning("Unsupported llm_provider=%s, using ollama only", provider)
 
-    if provider == "gemini":
-        result = _request_gemini_text(prompt, temperature, max_tokens)
-        if result:
-            return result
-        return _request_openrouter_text(prompt, temperature, max_tokens)
-
-    # auto: try openrouter first, then gemini
-    result = _request_openrouter_text(prompt, temperature, max_tokens)
+    logger.info("LLM request | provider=ollama")
+    result = _request_ollama_text(prompt, temperature, max_tokens)
     if result:
+        elapsed = time.time() - started_at
+        logger.info(f"LLM success | provider=ollama | time={elapsed:.2f}s")
         return result
-    return _request_gemini_text(prompt, temperature, max_tokens)
+
+    elapsed = time.time() - started_at
+    logger.error(f"LLM FAILED | provider=ollama | time={elapsed:.2f}s")
+    return None
 
 
 # ── Prompts & public API ────────────────────────────────────────────
@@ -205,6 +105,30 @@ def _cards_for_prompt(cards: list[dict[str, Any]]) -> str:
         line = f"{position}. {slot_label} | {card_name} ({orientation}) | смысл: {meaning}"
         lines.append(line)
     return "\n".join(lines)
+
+
+def _card_name_with_orientation(card: dict[str, Any]) -> str:
+    card_name = str(card.get("card_name") or "").strip() or "Без названия"
+    is_reversed = bool(card.get("is_reversed"))
+    orientation = "перевернутая" if is_reversed else "прямая"
+    return f"{card_name} ({orientation})"
+
+
+def _tarot_input_params(question: str | None, cards: list[dict[str, Any]]) -> tuple[str, str, str, str]:
+    cards_sorted = sorted(cards, key=lambda c: int(c.get("position", 0) or 0))[:3]
+    question_text = question.strip() if question and question.strip() else "Без уточняющего вопроса"
+
+    card_lines: list[str] = []
+    for idx in range(3):
+        if idx < len(cards_sorted):
+            card = cards_sorted[idx]
+            card_name = _card_name_with_orientation(card)
+            meaning = str(card.get("meaning") or "").strip() or "Описание отсутствует."
+            card_lines.append(f"{card_name}; {meaning}")
+        else:
+            card_lines.append("Карта не получена; Описание отсутствует.")
+
+    return question_text, card_lines[0], card_lines[1], card_lines[2]
 
 
 def fallback_tarot_interpretation(question: str | None, cards: list[dict[str, Any]]) -> str:
@@ -235,21 +159,64 @@ def interpret_tarot_reading(question: str | None, cards: list[dict[str, Any]]) -
     if not cards:
         return None
 
+    user_question, card_1, card_2, card_3 = _tarot_input_params(question=question, cards=cards)
     prompt = (
-        "Интерпретируй расклад из 3 карт таро и дай практичное объяснение.\n"
-        "Не используй markdown, не используй дисклеймеры, пиши по делу.\n"
-        "Формат строго:\n"
-        "Общая энергия: ...\n"
-        "Карта 1: ...\n"
-        "Карта 2: ...\n"
-        "Карта 3: ...\n"
-        "Практический шаг на 24 часа: ...\n\n"
-        f"Вопрос пользователя: {question or 'Без уточняющего вопроса'}\n"
-        "Карты:\n"
-        f"{_cards_for_prompt(cards)}"
+        "🎴 SYSTEM PROMPT — Таролог\n\n"
+        "Ты — профессиональный таролог с 20-летней практикой.\n"
+        "Ты не пересказываешь справочник значений карт.\n"
+        "Ты чувствуешь контекст вопроса и соединяешь карты в единую историю.\n\n"
+        "Тебе передаются:\n"
+        "• Вопрос пользователя\n"
+        "• Карта 1 (название + описание)\n"
+        "• Карта 2 (название + описание)\n"
+        "• Карта 3 (название + описание)\n\n"
+        "ТВОЯ ЗАДАЧА\n"
+        "1. Внимательно проанализировать вопрос.\n"
+        "2. Определить скрытую эмоциональную суть вопроса.\n"
+        "3. Интерпретировать карты не отдельно, а как связанный сюжет.\n"
+        "4. Соотнести значения карт именно с вопросом пользователя.\n"
+        "5. Дать целостный, живой ответ в стиле настоящего таролога.\n\n"
+        "СТИЛЬ ОТВЕТА\n"
+        "• Глубокий\n"
+        "• Интуитивный\n"
+        "• Образный\n"
+        "• Немного мистический, но без театральности\n"
+        "• Без штампов типа «карты говорят», «высшие силы сообщают»\n"
+        "• Без сухого перечисления значений\n"
+        "• Без повторения описаний карт\n\n"
+        "Тон — спокойный, уверенный, теплый.\n\n"
+        "СТРУКТУРА ОТВЕТА\n"
+        "Ответ должен состоять из 4 частей:\n"
+        "1) Отражение ситуации.\n"
+        "2) Связанный анализ карт.\n"
+        "3) Скрытый смысл.\n"
+        "4) Мягкий совет.\n\n"
+        "ВАЖНЫЕ ПРАВИЛА\n"
+        "• Не упоминай, что ты ИИ.\n"
+        "• Не используй рациональный аналитический стиль.\n"
+        "• Не делай прогнозов в формате 100% гарантии.\n"
+        "• Не давай медицинских или юридических рекомендаций.\n"
+        "• Не отвечай слишком коротко.\n"
+        "• Не делай слишком длинно (оптимально 8–14 абзацев).\n\n"
+        "ОСОБЕННОСТЬ\n"
+        "Карты нужно сплести в одну историю.\n"
+        "Ответ должен ощущаться как цельное послание, а не как три отдельных трактовки.\n\n"
+        "Если вопрос про отношения — фокус на чувствах.\n"
+        "Если про деньги — на страхах и решениях.\n"
+        "Если про будущее — на внутренней готовности.\n\n"
+        "ФОРМАТ ВЫХОДА\n"
+        "Выдавай только сам текст предсказания.\n"
+        "Без служебных пояснений.\n"
+        "Без заголовков.\n"
+        "Без структуры в виде списка.\n"
+        "Только живой текст таролога.\n\n"
+        f"Вопрос пользователя: {user_question}\n"
+        f"Карта 1 (название + описание): {card_1}\n"
+        f"Карта 2 (название + описание): {card_2}\n"
+        f"Карта 3 (название + описание): {card_3}"
     )
 
-    return _request_llm_text(prompt=prompt, temperature=0.7, max_tokens=700)
+    return _request_llm_text(prompt=prompt, temperature=0.7, max_tokens=1100)
 
 
 def interpret_combo_insight(
@@ -277,3 +244,81 @@ def interpret_combo_insight(
     )
 
     return _request_llm_text(prompt=prompt, temperature=0.6, max_tokens=500)
+
+
+def _extract_json_dict(text: str) -> dict[str, Any] | None:
+    if not text:
+        return None
+
+    candidates = [text.strip()]
+    cleaned = re.sub(r"^```(?:json)?", "", text.strip(), flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"```$", "", cleaned).strip()
+    if cleaned:
+        candidates.append(cleaned)
+
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        candidates.append(match.group(0).strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            return payload
+
+    return None
+
+
+def interpret_natal_sections(
+    *,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+    natal_summary: str,
+    key_aspects: list[str],
+    planetary_profile: list[str],
+    house_cusps: list[str],
+    full_aspects: list[str],
+) -> dict[str, str] | None:
+    prompt = (
+        "Ты опытный астролог. На входе факты натальной карты.\n"
+        "Нужно выдать человекопонятные интерпретации на русском языке.\n"
+        "Не давай дисклеймеров, не упоминай ИИ, не используй markdown.\n"
+        "Пиши тепло, ясно, без воды.\n\n"
+        "Верни СТРОГО JSON-объект с 4 ключами:\n"
+        "key_aspects, planetary_profile, house_cusps, natal_explanation.\n"
+        "Значение каждого ключа — строка из 3-6 предложений.\n"
+        "Без дополнительных ключей и без обрамляющего текста.\n\n"
+        f"Солнце: {sun_sign}\n"
+        f"Луна: {moon_sign}\n"
+        f"Асцендент: {rising_sign}\n"
+        f"Краткий натальный контекст: {natal_summary or 'Нет данных'}\n\n"
+        "Ключевые аспекты:\n"
+        f"{chr(10).join(key_aspects) if key_aspects else 'Нет данных'}\n\n"
+        "Планетный профиль:\n"
+        f"{chr(10).join(planetary_profile) if planetary_profile else 'Нет данных'}\n\n"
+        "Куспиды домов:\n"
+        f"{chr(10).join(house_cusps) if house_cusps else 'Нет данных'}\n\n"
+        "Полная матрица аспектов:\n"
+        f"{chr(10).join(full_aspects) if full_aspects else 'Нет данных'}"
+    )
+
+    raw = _request_llm_text(prompt=prompt, temperature=0.45, max_tokens=700)
+    if not raw:
+        return None
+
+    payload = _extract_json_dict(raw)
+    if not payload:
+        return None
+
+    result: dict[str, str] = {}
+    for key in ("key_aspects", "planetary_profile", "house_cusps", "natal_explanation"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+
+    return result or None

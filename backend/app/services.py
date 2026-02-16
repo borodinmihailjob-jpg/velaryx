@@ -1,14 +1,23 @@
 from datetime import date, datetime, timezone
+import hashlib
+import json
+import logging
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
+import redis
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from . import models
 from .config import settings
 from .astro_engine import calculate_natal_chart
-from .llm_engine import interpret_combo_insight, interpret_tarot_reading, llm_provider_label
+from .llm_engine import (
+    interpret_combo_insight,
+    interpret_natal_sections,
+    interpret_tarot_reading,
+    llm_provider_label,
+)
 from .security import expiry_after_days, generate_token
 from .tarot_engine import build_seed, card_image_url, draw_cards, supported_spreads
 
@@ -50,6 +59,11 @@ SIGN_RU_EN = {
 
 
 TAROT_HIDDEN_MESSAGE = "Карты скрыли ответ.\nВозможно, время ещё не пришло."
+NATAL_LLM_CACHE_PREFIX = "natal:llm:v1"
+NATAL_LLM_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
+
+logger = logging.getLogger("astrobot.natal.llm_cache")
+_redis_client: redis.Redis | None = None
 
 
 def get_or_create_user(db: Session, tg_user_id: int) -> models.User:
@@ -59,9 +73,44 @@ def get_or_create_user(db: Session, tg_user_id: int) -> models.User:
 
     user = models.User(tg_user_id=tg_user_id)
     db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
+    try:
+        db.commit()
+        db.refresh(user)
+        return user
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(models.User).filter(models.User.tg_user_id == tg_user_id).first()
+        if existing:
+            return existing
+        raise
+
+
+def _get_redis_client() -> redis.Redis | None:
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        _redis_client = redis.Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=1.5,
+            socket_timeout=1.5,
+        )
+        _redis_client.ping()
+        return _redis_client
+    except Exception as exc:
+        logger.warning("Redis unavailable for natal LLM cache: %s", str(exc))
+        _redis_client = None
+        return None
+
+
+def _normalize_llm_sections(payload: dict) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for key in ("key_aspects", "planetary_profile", "house_cusps", "natal_explanation"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+    return result
 
 
 def create_birth_profile(
@@ -134,42 +183,56 @@ def get_latest_natal_chart(db: Session, user_id: int) -> models.NatalChart:
     return chart
 
 
-def _natal_sections_from_payload(chart_payload: dict) -> list[dict]:
+def _format_natal_aspect(item: dict) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    p1 = PLANET_LABELS_RU.get(str(item.get("planet_1", "")).lower(), str(item.get("planet_1", "")))
+    p2 = PLANET_LABELS_RU.get(str(item.get("planet_2", "")).lower(), str(item.get("planet_2", "")))
+    asp = ASPECT_LABELS_RU.get(str(item.get("aspect", "")).lower(), str(item.get("aspect", "")))
+    if not p1 or not p2 or not asp:
+        return None
+    orb = item.get("orb")
+    if orb is None:
+        return f"{p1} - {p2}: {asp}"
+    try:
+        return f"{p1} - {p2}: {asp} (орб {round(float(orb), 2)})"
+    except (TypeError, ValueError):
+        return f"{p1} - {p2}: {asp}"
+
+
+def _extract_natal_material(
+    *,
+    chart_payload: dict,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+) -> dict[str, list[str] | str]:
     interpretation = chart_payload.get("interpretation") if isinstance(chart_payload, dict) else {}
     if not isinstance(interpretation, dict):
         interpretation = {}
 
-    sections: list[dict] = []
-    summary = interpretation.get("summary")
-    if summary:
-        sections.append({"title": "Общий вектор", "text": summary, "icon": "✨"})
+    full_aspect_lines: list[str] = []
+    aspects = chart_payload.get("aspects") if isinstance(chart_payload, dict) else None
+    if isinstance(aspects, list):
+        for item in aspects[:24]:
+            formatted = _format_natal_aspect(item)
+            if formatted:
+                full_aspect_lines.append(formatted)
 
-    sun_text = interpretation.get("sun_explanation")
-    if sun_text:
-        sections.append({"title": "Солнце", "text": sun_text, "icon": "☀️"})
-
-    moon_text = interpretation.get("moon_explanation")
-    if moon_text:
-        sections.append({"title": "Луна", "text": moon_text, "icon": "🌙"})
-
-    rising_text = interpretation.get("rising_explanation")
-    if rising_text:
-        sections.append({"title": "Асцендент", "text": rising_text, "icon": "⬆️"})
-
-    key_aspects = interpretation.get("key_aspects")
-    if isinstance(key_aspects, list) and key_aspects:
-        sections.append(
-            {
-                "title": "Ключевые аспекты",
-                "text": " • ".join(str(item) for item in key_aspects[:5]),
-                "icon": "🔭",
-            }
-        )
+    key_aspects_lines: list[str] = []
+    raw_key_aspects = interpretation.get("key_aspects")
+    if isinstance(raw_key_aspects, list):
+        for item in raw_key_aspects[:8]:
+            text = str(item).strip()
+            if text:
+                key_aspects_lines.append(text)
+    if not key_aspects_lines and full_aspect_lines:
+        key_aspects_lines = full_aspect_lines[:5]
 
     planets = chart_payload.get("planets") if isinstance(chart_payload, dict) else {}
+    planetary_profile_lines: list[str] = []
     if isinstance(planets, dict) and planets:
         planet_order = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto"]
-        lines: list[str] = []
         for key in planet_order:
             pdata = planets.get(key)
             if not isinstance(pdata, dict):
@@ -180,77 +243,193 @@ def _natal_sections_from_payload(chart_payload: dict) -> list[dict]:
             retro_suffix = ", ретроградно" if retro else ""
             label = PLANET_LABELS_RU.get(key, key.capitalize())
             if lon is None:
-                lines.append(f"{label}: {sign}{retro_suffix}")
-            else:
-                lines.append(f"{label}: {sign}, {round(float(lon), 2)}°{retro_suffix}")
-        if lines:
-            sections.append(
-                {
-                    "title": "Планетный профиль",
-                    "text": " | ".join(lines),
-                    "icon": "🪐",
-                }
-            )
-
-    houses = chart_payload.get("houses") if isinstance(chart_payload, dict) else None
-    if isinstance(houses, list) and houses:
-        house_chunks: list[str] = []
-        for idx, deg in enumerate(houses[:12], start=1):
-            try:
-                house_chunks.append(f"{idx} дом: {round(float(deg), 2)}°")
-            except (TypeError, ValueError):
-                continue
-        if house_chunks:
-            sections.append(
-                {
-                    "title": "Куспиды домов",
-                    "text": " • ".join(house_chunks),
-                    "icon": "🏛️",
-                }
-            )
-
-    aspects = chart_payload.get("aspects") if isinstance(chart_payload, dict) else None
-    if isinstance(aspects, list) and aspects:
-        aspect_lines: list[str] = []
-        for item in aspects[:10]:
-            if not isinstance(item, dict):
-                continue
-            p1 = PLANET_LABELS_RU.get(str(item.get("planet_1", "")).lower(), str(item.get("planet_1", "")))
-            p2 = PLANET_LABELS_RU.get(str(item.get("planet_2", "")).lower(), str(item.get("planet_2", "")))
-            asp = ASPECT_LABELS_RU.get(str(item.get("aspect", "")).lower(), str(item.get("aspect", "")))
-            orb = item.get("orb")
-            if orb is None:
-                aspect_lines.append(f"{p1} - {p2}: {asp}")
+                planetary_profile_lines.append(f"{label}: {sign}{retro_suffix}")
             else:
                 try:
-                    aspect_lines.append(f"{p1} - {p2}: {asp} (орб {round(float(orb), 2)})")
+                    planetary_profile_lines.append(f"{label}: {sign}, {round(float(lon), 2)}°{retro_suffix}")
                 except (TypeError, ValueError):
-                    aspect_lines.append(f"{p1} - {p2}: {asp}")
-        if aspect_lines:
-            sections.append(
-                {
-                    "title": "Полная матрица аспектов",
-                    "text": " • ".join(aspect_lines),
-                    "icon": "📐",
-                }
-            )
+                    planetary_profile_lines.append(f"{label}: {sign}{retro_suffix}")
 
-    next_steps = interpretation.get("next_steps")
-    if isinstance(next_steps, list) and next_steps:
-        sections.append(
-            {
-                "title": "Практические шаги",
-                "text": " • ".join(str(item) for item in next_steps[:5]),
-                "icon": "🧭",
-            }
+    house_cusp_lines: list[str] = []
+    houses = chart_payload.get("houses") if isinstance(chart_payload, dict) else None
+    if isinstance(houses, list):
+        for idx, deg in enumerate(houses[:12], start=1):
+            try:
+                house_cusp_lines.append(f"{idx} дом: {round(float(deg), 2)}°")
+            except (TypeError, ValueError):
+                continue
+
+    natal_summary = str(interpretation.get("summary") or "").strip() or (
+        f"Солнце в {sun_sign}, Луна в {moon_sign}, Асцендент в {rising_sign}."
+    )
+    return {
+        "key_aspects_lines": key_aspects_lines,
+        "planetary_profile_lines": planetary_profile_lines,
+        "house_cusp_lines": house_cusp_lines,
+        "full_aspect_lines": full_aspect_lines,
+        "natal_summary": natal_summary,
+    }
+
+
+def _natal_llm_cache_fingerprint(
+    *,
+    material: dict[str, list[str] | str],
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+) -> str:
+    payload = {
+        "sun_sign": sun_sign,
+        "moon_sign": moon_sign,
+        "rising_sign": rising_sign,
+        "natal_summary": str(material.get("natal_summary") or ""),
+        "key_aspects": list(material.get("key_aspects_lines") or []),
+        "planetary_profile": list(material.get("planetary_profile_lines") or []),
+        "house_cusps": list(material.get("house_cusp_lines") or []),
+        "full_aspects": list(material.get("full_aspect_lines") or []),
+        "provider": settings.llm_provider,
+        "model": llm_provider_label() or "unknown",
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _natal_llm_cache_key(user_id: int, fingerprint: str) -> str:
+    return f"{NATAL_LLM_CACHE_PREFIX}:{user_id}:{fingerprint}"
+
+
+def _get_cached_natal_llm_sections(user_id: int, fingerprint: str) -> dict[str, str] | None:
+    client = _get_redis_client()
+    if client is None:
+        return None
+
+    key = _natal_llm_cache_key(user_id, fingerprint)
+    try:
+        raw = client.get(key)
+    except Exception as exc:
+        logger.warning("Redis read failed for natal LLM cache key=%s: %s", key, str(exc))
+        return None
+    if not raw:
+        logger.info("Natal LLM cache miss | user_id=%s | fingerprint=%s", user_id, fingerprint[:12])
+        return None
+
+    try:
+        payload = json.loads(raw)
+    except Exception as exc:
+        logger.warning("Invalid natal LLM cache payload key=%s: %s", key, str(exc))
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    normalized = _normalize_llm_sections(payload)
+    if not normalized:
+        return None
+
+    logger.info("Natal LLM cache hit | user_id=%s | fingerprint=%s", user_id, fingerprint[:12])
+    return normalized
+
+
+def _set_cached_natal_llm_sections(user_id: int, fingerprint: str, llm_sections: dict[str, str]) -> None:
+    client = _get_redis_client()
+    if client is None:
+        return
+
+    normalized = _normalize_llm_sections(llm_sections)
+    if not normalized:
+        return
+
+    key = _natal_llm_cache_key(user_id, fingerprint)
+    try:
+        client.setex(
+            key,
+            NATAL_LLM_CACHE_TTL_SECONDS,
+            json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
         )
+        logger.info("Natal LLM cache store | user_id=%s | fingerprint=%s", user_id, fingerprint[:12])
+    except Exception as exc:
+        logger.warning("Redis write failed for natal LLM cache key=%s: %s", key, str(exc))
 
-    return sections
+
+def _build_natal_sections(
+    *,
+    material: dict[str, list[str] | str],
+    llm_sections: dict[str, str] | None = None,
+) -> list[dict]:
+    llm_sections = llm_sections or {}
+    key_aspects_lines = list(material.get("key_aspects_lines") or [])
+    planetary_profile_lines = list(material.get("planetary_profile_lines") or [])
+    house_cusp_lines = list(material.get("house_cusp_lines") or [])
+    natal_summary = str(material.get("natal_summary") or "")
+
+    key_aspects_fallback = " • ".join(key_aspects_lines) if key_aspects_lines else "Ключевые аспекты пока не определены."
+    planetary_profile_fallback = (
+        " | ".join(planetary_profile_lines) if planetary_profile_lines else "Планетный профиль пока недоступен."
+    )
+    house_cusps_fallback = " • ".join(house_cusp_lines) if house_cusp_lines else "Куспиды домов пока недоступны."
+    natal_explanation_fallback = natal_summary or "Натальная карта сформирована, но подробное объяснение пока недоступно."
+
+    return [
+        {
+            "title": "Ключевые аспекты",
+            "text": str(llm_sections.get("key_aspects") or key_aspects_fallback),
+            "icon": "🔭",
+        },
+        {
+            "title": "Планетный профиль",
+            "text": str(llm_sections.get("planetary_profile") or planetary_profile_fallback),
+            "icon": "🪐",
+        },
+        {
+            "title": "Куспиды домов",
+            "text": str(llm_sections.get("house_cusps") or house_cusps_fallback),
+            "icon": "🏛️",
+        },
+        {
+            "title": "Объяснение твоей натальной карты",
+            "text": str(llm_sections.get("natal_explanation") or natal_explanation_fallback),
+            "icon": "🔮",
+        },
+    ]
+
+
+def _natal_sections_from_payload(chart: models.NatalChart, user_id: int) -> list[dict]:
+    chart_payload = chart.chart_payload if isinstance(chart.chart_payload, dict) else {}
+
+    material = _extract_natal_material(
+        chart_payload=chart_payload,
+        sun_sign=str(chart.sun_sign or ""),
+        moon_sign=str(chart.moon_sign or ""),
+        rising_sign=str(chart.rising_sign or ""),
+    )
+    fingerprint = _natal_llm_cache_fingerprint(
+        material=material,
+        sun_sign=str(chart.sun_sign or ""),
+        moon_sign=str(chart.moon_sign or ""),
+        rising_sign=str(chart.rising_sign or ""),
+    )
+
+    llm_sections = _get_cached_natal_llm_sections(user_id=user_id, fingerprint=fingerprint)
+    if llm_sections is None:
+        generated = interpret_natal_sections(
+            sun_sign=str(chart.sun_sign or ""),
+            moon_sign=str(chart.moon_sign or ""),
+            rising_sign=str(chart.rising_sign or ""),
+            natal_summary=str(material.get("natal_summary") or ""),
+            key_aspects=list(material.get("key_aspects_lines") or []),
+            planetary_profile=list(material.get("planetary_profile_lines") or []),
+            house_cusps=list(material.get("house_cusp_lines") or []),
+            full_aspects=list(material.get("full_aspect_lines") or []),
+        )
+        llm_sections = _normalize_llm_sections(generated or {})
+        if llm_sections:
+            _set_cached_natal_llm_sections(user_id=user_id, fingerprint=fingerprint, llm_sections=llm_sections)
+
+    return _build_natal_sections(material=material, llm_sections=llm_sections)
 
 
 def get_full_natal_chart(db: Session, user_id: int) -> tuple[models.NatalChart, list[dict], str | None]:
     chart = get_latest_natal_chart(db=db, user_id=user_id)
-    sections = _natal_sections_from_payload(chart.chart_payload)
+    sections = _natal_sections_from_payload(chart=chart, user_id=user_id)
     wheel_chart_url = None
     payload = chart.chart_payload if isinstance(chart.chart_payload, dict) else {}
     candidate = payload.get("wheel_chart_url")

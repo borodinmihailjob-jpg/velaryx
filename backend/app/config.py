@@ -48,37 +48,20 @@ class Settings(BaseSettings):
     translate_via_google_free: bool = True
     translation_timeout_seconds: float = 8.0
 
-    gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
-    gemini_timeout_seconds: float = 20.0
+    # Ollama (local LLM runtime)
+    ollama_model: str = "qwen2.5:7b"
+    ollama_base_url: str = "http://host.docker.internal:11434"
+    ollama_timeout_seconds: float = 60.0
 
-    # OpenRouter (OpenAI-compatible, free models)
-    openrouter_api_key: str | None = None
-    openrouter_model: str = "deepseek/deepseek-r1-0528:free"
-    openrouter_fallback_models_raw: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_timeout_seconds: float = 30.0
-    openrouter_retry_attempts: int = 2
-
-    # LLM provider priority: "openrouter", "gemini", "auto"
-    # "auto" tries openrouter first, then gemini, then local fallback
-    llm_provider: str = "openrouter"
+    # LLM provider is kept for backward compatibility in env files.
+    # Only "ollama" is supported by runtime.
+    llm_provider: str = "ollama"
 
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()
         if not raw:
             return []
         return [item.strip() for item in raw.split(",") if item.strip()]
-
-    def openrouter_models(self) -> list[str]:
-        primary = self.openrouter_model.strip()
-        raw = self.openrouter_fallback_models_raw.strip()
-        fallback = [item.strip() for item in raw.split(",") if item.strip()]
-        merged = [primary, *fallback]
-        # Keep order, remove duplicates.
-        return list(dict.fromkeys(merged))
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

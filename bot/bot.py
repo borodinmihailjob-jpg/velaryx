@@ -1,205 +1,105 @@
 import asyncio
+import logging
 import os
 
-import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo
 from dotenv import load_dotenv
 
 load_dotenv()
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logging.getLogger("aiogram.event").setLevel(logging.WARNING)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "")
 MINI_APP_NAME = os.getenv("MINI_APP_NAME", "app")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
-
-API_BASE_URL = os.getenv("API_BASE_URL")
-if not API_BASE_URL:
-    api_host = os.getenv("API_HOST", "localhost")
-    api_port = os.getenv("API_PORT", "8000")
-    API_BASE_URL = f"http://{api_host}:{api_port}"
+MINI_APP_PUBLIC_BASE_URL = os.getenv("MINI_APP_PUBLIC_BASE_URL", "").strip()
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is required")
 
+logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
-def _headers(tg_user_id: int) -> dict[str, str]:
-    headers = {"X-TG-USER-ID": str(tg_user_id)}
-    if INTERNAL_API_KEY:
-        headers["X-Internal-API-Key"] = INTERNAL_API_KEY
-    return headers
-
-
-def _command_arg(text: str | None) -> str | None:
-    if not text:
-        return None
-    parts = text.split(maxsplit=1)
-    if len(parts) < 2:
-        return None
-    arg = parts[1].strip()
-    return arg or None
-
-
 def miniapp_base_link() -> str:
+    if MINI_APP_PUBLIC_BASE_URL:
+        return MINI_APP_PUBLIC_BASE_URL
     return f"https://t.me/{BOT_USERNAME}/{MINI_APP_NAME}"
 
 
-def miniapp_link(token: str) -> str:
-    return f"https://t.me/{BOT_USERNAME}/{MINI_APP_NAME}?startapp={token}"
-
-
-def miniapp_screen_link(screen_code: str) -> str:
-    return miniapp_link(f"sc_{screen_code}")
-
-
-async def fetch_daily_forecast(tg_user_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(
-            f"{API_BASE_URL}/v1/forecast/daily",
-            headers=_headers(tg_user_id),
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-async def fetch_natal_full(tg_user_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.get(
-            f"{API_BASE_URL}/v1/natal/full",
-            headers=_headers(tg_user_id),
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-async def draw_tarot_for_user(tg_user_id: int, question: str | None) -> dict:
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.post(
-            f"{API_BASE_URL}/v1/tarot/draw",
-            headers=_headers(tg_user_id),
-            json={"spread_type": "three_card", "question": question},
-        )
-        response.raise_for_status()
-        return response.json()
+def miniapp_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Войти в портал 🪞",
+                    web_app=WebAppInfo(url=miniapp_base_link()),
+                )
+            ]
+        ]
+    )
 
 
 @dp.message(Command("start"))
 async def start_handler(message: Message) -> None:
+    logger.info(
+        "Запуск бота пользователем | tg_user_id=%s | username=%s",
+        message.from_user.id if message.from_user else "-",
+        message.from_user.username if message.from_user else "-",
+    )
+    if not BOT_USERNAME and not MINI_APP_PUBLIC_BASE_URL:
+        await message.answer("Нужно задать BOT_USERNAME или MINI_APP_PUBLIC_BASE_URL в окружении.")
+        return
     await message.answer(
-        "Команды:\n"
-        "/app - открыть Mini App\n"
-        "/natal - полная натальная карта\n"
-        "/daily - ежедневный прогноз\n"
-        "/tarot [вопрос] - расклад 3 карты"
+        "Символы уже приходят в движение…🕯\n"
+        "Твой вопрос будет услышан, и нити судьбы сплетутся в историю 🔮✨\n\n"
+        "✨ Коснись портала ниже —\n"
+        "и позволь раскладу открыться 🃏",
+        reply_markup=miniapp_keyboard(),
     )
 
 
 @dp.message(Command("app"))
 async def app_handler(message: Message) -> None:
-    if not BOT_USERNAME:
-        await message.answer("Нужно задать BOT_USERNAME в окружении.")
-        return
-    await message.answer(f"Mini App: {miniapp_base_link()}")
-
-
-@dp.message(Command("natal"))
-async def natal_handler(message: Message) -> None:
-    if not BOT_USERNAME:
-        await message.answer("Нужно задать BOT_USERNAME в окружении.")
-        return
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя Telegram.")
-        return
-
-    try:
-        natal = await fetch_natal_full(message.from_user.id)
-        sections = natal.get("interpretation_sections") or []
-        summary = sections[0]["text"] if sections else "Откройте Mini App для полного разбора."
-        await message.answer(
-            f"Натальная карта: {natal.get('sun_sign')} / {natal.get('moon_sign')} / {natal.get('rising_sign')}\n"
-            f"{summary}\n\n"
-            f"Полный экран: {miniapp_screen_link('natal')}"
-        )
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            await message.answer(
-                "Сначала заполните данные рождения в Mini App.\n"
-                f"Открыть: {miniapp_screen_link('onboarding')}"
-            )
-            return
-        await message.answer("Не удалось получить натальную карту. Попробуйте позже.")
-    except Exception:
-        await message.answer("Не удалось получить натальную карту. Попробуйте позже.")
-
-
-@dp.message(Command("daily"))
-async def daily_handler(message: Message) -> None:
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя Telegram.")
-        return
-
-    try:
-        forecast = await fetch_daily_forecast(message.from_user.id)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            await message.answer(
-                "Сначала создайте и рассчитайте натальную карту в Mini App.\n"
-                f"Открыть: {miniapp_screen_link('onboarding')}"
-            )
-            return
-        await message.answer("Не удалось получить прогноз. Попробуйте позже.")
-        return
-    except Exception:
-        await message.answer("Не удалось получить прогноз. Попробуйте позже.")
-        return
-
-    await message.answer(
-        f"Прогноз на {forecast['date']}\n"
-        f"Энергия: {forecast['energy_score']}/100\n"
-        f"{forecast['summary']}\n\n"
-        f"Сторис-режим: {miniapp_screen_link('stories')}"
+    logger.info(
+        "Команда /app | tg_user_id=%s",
+        message.from_user.id if message.from_user else "-",
     )
-
-
-@dp.message(Command("tarot"))
-async def tarot_handler(message: Message) -> None:
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя Telegram.")
+    if not BOT_USERNAME and not MINI_APP_PUBLIC_BASE_URL:
+        await message.answer("Нужно задать BOT_USERNAME или MINI_APP_PUBLIC_BASE_URL в окружении.")
         return
-
-    question = _command_arg(message.text)
-
-    try:
-        reading = await draw_tarot_for_user(message.from_user.id, question)
-    except Exception:
-        await message.answer("Не удалось сделать расклад. Попробуйте позже.")
-        return
-
-    lines = [f"Таро ({reading['spread_type']}):"]
-    cards = reading.get("cards") or []
-    for card in cards:
-        orientation = "перевернутая" if card["is_reversed"] else "прямая"
-        lines.append(f"{card['position']}. {card['card_name']} ({orientation})")
-
-    ai_text = reading.get("ai_interpretation")
-    if ai_text:
-        lines.append("")
-        lines.append(ai_text)
-
-    lines.append(f"\nПолная версия: {miniapp_screen_link('tarot')}")
-    await message.answer("\n".join(lines))
+    await message.answer(
+        "Откройте Mini App по кнопке ниже.",
+        reply_markup=miniapp_keyboard(),
+    )
 
 
 @dp.message(F.text)
 async def fallback_handler(message: Message) -> None:
-    await message.answer("Используйте /start для списка команд")
+    await message.answer(
+        "Для работы используйте Mini App.",
+        reply_markup=miniapp_keyboard(),
+    )
 
 
 async def main() -> None:
+    try:
+        await bot.set_my_commands([BotCommand(command="start", description="Войти в портал")])
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Войти в портал 🪞",
+                web_app=WebAppInfo(url=miniapp_base_link()),
+            )
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to set Telegram menu/commands: %s", exc)
     await dp.start_polling(bot)
 
 
