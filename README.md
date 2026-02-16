@@ -62,6 +62,11 @@ alembic upgrade head
 - Optional LLM for tarot explanations:
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (default `gemini-2.0-flash`)
+- OpenRouter alternative:
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_MODEL`
+- `OPENROUTER_FALLBACK_MODELS_RAW` (comma-separated models)
+- `LLM_PROVIDER` (`openrouter`, `gemini`, `auto`)
 4. Keep production security flags:
 - `REQUIRE_TELEGRAM_INIT_DATA=true`
 - `ALLOW_INSECURE_DEV_AUTH=false`

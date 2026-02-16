@@ -56,8 +56,10 @@ class Settings(BaseSettings):
     # OpenRouter (OpenAI-compatible, free models)
     openrouter_api_key: str | None = None
     openrouter_model: str = "deepseek/deepseek-r1-0528:free"
+    openrouter_fallback_models_raw: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_timeout_seconds: float = 30.0
+    openrouter_retry_attempts: int = 2
 
     # LLM provider priority: "openrouter", "gemini", "auto"
     # "auto" tries openrouter first, then gemini, then local fallback
@@ -68,6 +70,14 @@ class Settings(BaseSettings):
         if not raw:
             return []
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    def openrouter_models(self) -> list[str]:
+        primary = self.openrouter_model.strip()
+        raw = self.openrouter_fallback_models_raw.strip()
+        fallback = [item.strip() for item in raw.split(",") if item.strip()]
+        merged = [primary, *fallback]
+        # Keep order, remove duplicates.
+        return list(dict.fromkeys(merged))
 
 
 @lru_cache(maxsize=1)

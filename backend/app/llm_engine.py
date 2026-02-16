@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -38,41 +39,64 @@ def _request_openrouter_text(prompt: str, temperature: float, max_tokens: int) -
         "HTTP-Referer": "https://astrobot.app",
         "X-Title": "AstroBot",
     }
-    payload = {
-        "model": settings.openrouter_model,
-        "messages": [
-            {"role": "system", "content": "Ты профессиональный астролог и таролог. Отвечай только на русском языке. Пиши по делу, без markdown, без дисклеймеров."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
+    retry_attempts = max(1, settings.openrouter_retry_attempts)
 
-    try:
-        response = httpx.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=settings.openrouter_timeout_seconds,
-        )
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
-            return None
+    for model in settings.openrouter_models():
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты профессиональный астролог и таролог. Отвечай только на русском языке. "
+                        "Пиши по делу, без markdown, без дисклеймеров."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
 
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices:
-            return None
+        for attempt in range(1, retry_attempts + 1):
+            try:
+                response = httpx.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=settings.openrouter_timeout_seconds,
+                )
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, dict):
+                    break
 
-        message = choices[0].get("message", {})
-        text = message.get("content", "")
-        if isinstance(text, str) and text.strip():
-            return text.strip()
-    except httpx.HTTPStatusError as exc:
-        body = exc.response.text[:300] if exc.response is not None else ""
-        logger.warning("OpenRouter request failed status=%s body=%s", exc.response.status_code, body)
-    except Exception as exc:
-        logger.warning("OpenRouter request failed error=%s", str(exc))
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    break
+
+                message = choices[0].get("message", {})
+                text = message.get("content", "")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+                break
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code if exc.response is not None else -1
+                body = exc.response.text[:300] if exc.response is not None else ""
+                if status == 429 and attempt < retry_attempts:
+                    time.sleep(min(2.0, 0.4 * (2 ** (attempt - 1))))
+                    continue
+                logger.warning(
+                    "OpenRouter request failed model=%s attempt=%s status=%s body=%s",
+                    model,
+                    attempt,
+                    status,
+                    body,
+                )
+                break
+            except Exception as exc:
+                logger.warning("OpenRouter request failed model=%s attempt=%s error=%s", model, attempt, str(exc))
+                break
     return None
 
 
