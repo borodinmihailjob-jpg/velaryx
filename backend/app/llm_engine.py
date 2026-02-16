@@ -49,8 +49,6 @@ def _request_gemini_text(prompt: str, temperature: float, max_output_tokens: int
     models_to_try = [requested_model]
     if requested_model != "gemini-2.0-flash":
         models_to_try.append("gemini-2.0-flash")
-    if requested_model != "gemini-1.5-flash":
-        models_to_try.append("gemini-1.5-flash")
 
     for model in models_to_try:
         url = f"{base_url}/models/{model}:generateContent"

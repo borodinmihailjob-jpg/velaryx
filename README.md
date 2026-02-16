@@ -54,6 +54,7 @@ alembic upgrade head
 - `MINI_APP_PUBLIC_BASE_URL`
 - `CORS_ORIGINS_RAW` (include miniapp public URL)
 - `VITE_API_BASE_URL` (public URL of `astrobot-api`)
+- `VITE_ALLOW_DEV_AUTH=false` (production miniapp should use Telegram initData only)
 - `VITE_BOT_USERNAME`
 - Optional external engines:
 - `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`

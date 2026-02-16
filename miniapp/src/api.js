@@ -1,4 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const DEV_AUTH_ALLOWED = import.meta.env.VITE_ALLOW_DEV_AUTH === 'true';
 
 function readInitDataFromUrl() {
   try {
@@ -52,10 +53,16 @@ function buildHeaders(options = {}) {
 
   if (initData) {
     headers['X-Telegram-Init-Data'] = initData;
-  } else {
-    headers['X-TG-USER-ID'] = resolveTgUserId();
+    return headers;
   }
-  return headers;
+
+  const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (DEV_AUTH_ALLOWED || isLocalHost) {
+    headers['X-TG-USER-ID'] = resolveTgUserId();
+    return headers;
+  }
+
+  throw new Error('Откройте Mini App внутри Telegram (через ссылку t.me), чтобы пройти авторизацию.');
 }
 
 async function throwResponseError(response) {
