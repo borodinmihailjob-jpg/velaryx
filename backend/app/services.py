@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from . import models
 from .config import settings
 from .astro_engine import calculate_natal_chart
-from .llm_engine import fallback_tarot_interpretation, interpret_combo_insight, interpret_tarot_reading, llm_provider_label
+from .llm_engine import interpret_combo_insight, interpret_tarot_reading, llm_provider_label
 from .security import expiry_after_days, generate_token
 from .tarot_engine import build_seed, card_image_url, draw_cards, supported_spreads
 
@@ -47,6 +47,9 @@ SIGN_RU_EN = {
     "Водолей": "Aquarius",
     "Рыбы": "Pisces",
 }
+
+
+TAROT_HIDDEN_MESSAGE = "Карты скрыли ответ.\nВозможно, время ещё не пришло."
 
 
 def get_or_create_user(db: Session, tg_user_id: int) -> models.User:
@@ -458,7 +461,7 @@ def build_tarot_ai_interpretation(question: str | None, cards_payload: list[dict
     text = interpret_tarot_reading(question=question, cards=cards_payload)
     if text:
         return text, llm_provider_label()
-    return fallback_tarot_interpretation(question=question, cards=cards_payload), "local:fallback"
+    return TAROT_HIDDEN_MESSAGE, "local:fallback"
 
 
 def build_combo_insight(

@@ -49,7 +49,13 @@ def test_natal_forecast_tarot_flow(client):
         json={"spread_type": "three_card", "question": "What to focus on?"},
     )
     assert tarot_resp.status_code == 200
-    assert len(tarot_resp.json()["cards"]) == 3
+    tarot_payload = tarot_resp.json()
+    assert "ai_interpretation" in tarot_payload
+    if tarot_payload.get("llm_provider") == "local:fallback":
+        assert tarot_payload["cards"] == []
+        assert tarot_payload["ai_interpretation"] == "Карты скрыли ответ.\nВозможно, время ещё не пришло."
+    else:
+        assert len(tarot_payload["cards"]) == 3
 
     combo_resp = client.post(
         "/v1/insights/astro-tarot",

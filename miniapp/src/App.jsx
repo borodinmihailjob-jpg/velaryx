@@ -595,8 +595,8 @@ function Tarot({ onBack }) {
 
       {reading && (
         <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate" style={{ gap: 12 }}>
-          <p className="section-title">Ваш расклад</p>
-          {reading.cards.map((card, idx) => (
+          {(reading.cards || []).length > 0 && <p className="section-title">Ваш расклад</p>}
+          {(reading.cards || []).map((card, idx) => (
             <motion.article key={`${card.card_name}-${idx}`} className="tarot-card" variants={staggerItem}>
               {card.image_url && (
                 <div className="tarot-image-frame">

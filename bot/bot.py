@@ -216,7 +216,8 @@ async def tarot_handler(message: Message) -> None:
         return
 
     lines = [f"Таро ({reading['spread_type']}):"]
-    for card in reading["cards"]:
+    cards = reading.get("cards") or []
+    for card in cards:
         orientation = "перевернутая" if card["is_reversed"] else "прямая"
         lines.append(f"{card['position']}. {card['card_name']} ({orientation})")
 

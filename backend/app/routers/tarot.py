@@ -30,6 +30,8 @@ def draw_tarot(
         question=session.question,
         cards_payload=cards_payload,
     )
+    hide_cards = llm_provider == "local:fallback"
+    response_cards = [] if hide_cards else sorted(cards, key=lambda c: c.position)
 
     return schemas.TarotSessionResponse(
         session_id=session.id,
@@ -48,7 +50,7 @@ def draw_tarot(
                 image_url=card_image_url(card.card_name),
                 provider=settings.tarot_provider,
             )
-            for card in sorted(cards, key=lambda c: c.position)
+            for card in response_cards
         ],
     )
 
