@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_seconds: float = 20.0
 
+    # OpenRouter (OpenAI-compatible, free models)
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "deepseek/deepseek-r1-0528:free"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_timeout_seconds: float = 30.0
+
+    # LLM provider priority: "openrouter", "gemini", "auto"
+    # "auto" tries openrouter first, then gemini, then local fallback
+    llm_provider: str = "openrouter"
+
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()
         if not raw:
