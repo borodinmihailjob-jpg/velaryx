@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def llm_provider_label() -> str | None:
@@ -42,30 +45,44 @@ def _request_gemini_text(prompt: str, temperature: float, max_output_tokens: int
         return None
 
     base_url = settings.gemini_base_url.rstrip("/")
-    model = settings.gemini_model.strip()
-    url = f"{base_url}/models/{model}:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_output_tokens,
-        },
-    }
+    requested_model = settings.gemini_model.strip()
+    models_to_try = [requested_model]
+    if requested_model != "gemini-2.0-flash":
+        models_to_try.append("gemini-2.0-flash")
+    if requested_model != "gemini-1.5-flash":
+        models_to_try.append("gemini-1.5-flash")
 
-    try:
-        response = httpx.post(
-            url,
-            params={"key": api_key},
-            json=payload,
-            timeout=settings.gemini_timeout_seconds,
-        )
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
-            return None
-        return _extract_gemini_text(data)
-    except Exception:
-        return None
+    for model in models_to_try:
+        url = f"{base_url}/models/{model}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_output_tokens,
+            },
+        }
+        try:
+            response = httpx.post(
+                url,
+                params={"key": api_key},
+                json=payload,
+                timeout=settings.gemini_timeout_seconds,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict):
+                continue
+            text = _extract_gemini_text(data)
+            if text:
+                return text
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:250] if exc.response is not None else ""
+            logger.warning("Gemini request failed for model=%s status=%s body=%s", model, exc.response.status_code, body)
+            continue
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Gemini request failed for model=%s error=%s", model, str(exc))
+            continue
+    return None
 
 
 def _cards_for_prompt(cards: list[dict[str, Any]]) -> str:
@@ -80,6 +97,30 @@ def _cards_for_prompt(cards: list[dict[str, Any]]) -> str:
         line = f"{position}. {slot_label} | {card_name} ({orientation}) | смысл: {meaning}"
         lines.append(line)
     return "\n".join(lines)
+
+
+def fallback_tarot_interpretation(question: str | None, cards: list[dict[str, Any]]) -> str:
+    if not cards:
+        return "Общая энергия: сейчас важно действовать спокойно и последовательно."
+
+    card_blocks: list[str] = []
+    for idx, card in enumerate(cards[:3], start=1):
+        meaning = str(card.get("meaning") or "").strip() or "прочтите карту как подсказку на текущий шаг."
+        card_blocks.append(f"Карта {idx}: {meaning}")
+
+    question_line = (
+        f"Общая энергия: вопрос «{question.strip()}» лучше решать через ясные приоритеты и короткие действия."
+        if question and question.strip()
+        else "Общая энергия: фокус на одном главном решении дня и отказ от лишнего."
+    )
+
+    return "\n".join(
+        [
+            question_line,
+            *card_blocks,
+            "Практический шаг на 24 часа: выберите один конкретный шаг и выполните его сегодня до вечера.",
+        ]
+    )
 
 
 def interpret_tarot_reading(question: str | None, cards: list[dict[str, Any]]) -> str | None:

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from . import models
 from .config import settings
 from .astro_engine import calculate_natal_chart
-from .llm_engine import interpret_combo_insight, interpret_tarot_reading, llm_provider_label
+from .llm_engine import fallback_tarot_interpretation, interpret_combo_insight, interpret_tarot_reading, llm_provider_label
 from .security import expiry_after_days, generate_token
 from .tarot_engine import build_seed, card_image_url, draw_cards, supported_spreads
 
@@ -456,9 +456,9 @@ def build_tarot_cards_payload(cards: list[models.TarotCard]) -> list[dict]:
 
 def build_tarot_ai_interpretation(question: str | None, cards_payload: list[dict]) -> tuple[str | None, str | None]:
     text = interpret_tarot_reading(question=question, cards=cards_payload)
-    if not text:
-        return None, None
-    return text, llm_provider_label()
+    if text:
+        return text, llm_provider_label()
+    return fallback_tarot_interpretation(question=question, cards=cards_payload), "local:fallback"
 
 
 def build_combo_insight(
@@ -496,6 +496,8 @@ def build_combo_insight(
     if llm_advice:
         combined_advice = llm_advice
         llm_provider = llm_provider_label()
+    else:
+        llm_provider = "local:fallback"
 
     return chart, forecast, session_with_cards, tarot_cards_payload, combined_advice, llm_provider
 
