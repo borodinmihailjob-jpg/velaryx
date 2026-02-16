@@ -640,6 +640,32 @@ button:disabled {
   pointer-events: none;
 }
 
+.fortune-gif-stage {
+  position: relative;
+  z-index: 1;
+  height: 178px;
+  display: grid;
+  place-items: center;
+}
+
+.fortune-loader-gif {
+  width: min(180px, 56vw);
+  max-height: 170px;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid rgba(233, 211, 255, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 14px 28px rgba(13, 8, 28, 0.48),
+    0 0 32px rgba(176, 130, 255, 0.25);
+  animation: gif-breathe 3s ease-in-out infinite;
+}
+
+@keyframes gif-breathe {
+  0%, 100% { transform: scale(0.98); filter: saturate(1); }
+  50% { transform: scale(1.02); filter: saturate(1.08); }
+}
+
 .fortune-stage {
   position: relative;
   z-index: 1;

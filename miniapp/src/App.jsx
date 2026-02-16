@@ -6,6 +6,7 @@ import { apiRequest } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
+const TAROT_LOADING_GIF = import.meta.env.VITE_TAROT_LOADING_GIF || '';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20, scale: 0.98 },
@@ -485,9 +486,11 @@ function Tarot({ onBack }) {
   const [reading, setReading] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [gifFailed, setGifFailed] = useState(false);
 
   const draw = async () => {
     setError('');
+    setGifFailed(false);
     setLoading(true);
     try {
       const data = await apiRequest('/v1/tarot/draw', {
@@ -534,25 +537,42 @@ function Tarot({ onBack }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
-          <div className="fortune-stage" aria-hidden="true">
-            <span className="fortune-particle particle-1" />
-            <span className="fortune-particle particle-2" />
-            <span className="fortune-particle particle-3" />
-            <span className="fortune-particle particle-4" />
-            <span className="fortune-particle particle-5" />
-
-            <div className="fortune-orbit orbit-1"><span className="orbit-card" /></div>
-            <div className="fortune-orbit orbit-2"><span className="orbit-card" /></div>
-            <div className="fortune-orbit orbit-3"><span className="orbit-card" /></div>
-
+          {TAROT_LOADING_GIF && !gifFailed ? (
             <motion.div
-              className="fortune-orb"
-              animate={{ y: [0, -6, 0], scale: [1, 1.02, 1] }}
-              transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
+              className="fortune-gif-stage"
+              initial={{ opacity: 0.5, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
             >
-              <div className="fortune-orb-core" />
+              <img
+                className="fortune-loader-gif"
+                src={TAROT_LOADING_GIF}
+                alt="Tarot loading"
+                loading="eager"
+                onError={() => setGifFailed(true)}
+              />
             </motion.div>
-          </div>
+          ) : (
+            <div className="fortune-stage" aria-hidden="true">
+              <span className="fortune-particle particle-1" />
+              <span className="fortune-particle particle-2" />
+              <span className="fortune-particle particle-3" />
+              <span className="fortune-particle particle-4" />
+              <span className="fortune-particle particle-5" />
+
+              <div className="fortune-orbit orbit-1"><span className="orbit-card" /></div>
+              <div className="fortune-orbit orbit-2"><span className="orbit-card" /></div>
+              <div className="fortune-orbit orbit-3"><span className="orbit-card" /></div>
+
+              <motion.div
+                className="fortune-orb"
+                animate={{ y: [0, -6, 0], scale: [1, 1.02, 1] }}
+                transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
+              >
+                <div className="fortune-orb-core" />
+              </motion.div>
+            </div>
+          )}
           <p className="fortune-loader-title">Сфера открывает знаки...</p>
           <p className="fortune-loader-subtitle">Карты складываются в ответ</p>
         </motion.div>
