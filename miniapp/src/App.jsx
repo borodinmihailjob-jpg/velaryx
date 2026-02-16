@@ -509,7 +509,6 @@ function Tarot({ onBack }) {
       onBack={onBack}
       className="tarot-screen"
     >
-      <div className="tarot-table-sigil" aria-hidden="true">MYSTERIUM TAROT</div>
       <div className="stack">
         <label>
           Ваш вопрос
@@ -530,45 +529,32 @@ function Tarot({ onBack }) {
 
       {loading && (
         <motion.div
-          className="tarot-loader"
+          className="fortune-loader"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
-          <div className="tarot-loader-table" aria-hidden="true">
-            <motion.div
-              className="tarot-loader-card"
-              animate={{ y: [0, -6, 0], rotate: [-3, -1, -3] }}
-              transition={{ repeat: Infinity, duration: 2.4, ease: 'easeInOut' }}
-            />
-            <motion.div
-              className="tarot-loader-card tarot-loader-card-center"
-              animate={{ y: [0, -10, 0], rotate: [0, 2, 0] }}
-              transition={{ repeat: Infinity, duration: 2.1, ease: 'easeInOut', delay: 0.2 }}
-            />
-            <motion.div
-              className="tarot-loader-card"
-              animate={{ y: [0, -7, 0], rotate: [3, 1, 3] }}
-              transition={{ repeat: Infinity, duration: 2.6, ease: 'easeInOut', delay: 0.4 }}
-            />
-          </div>
+          <div className="fortune-stage" aria-hidden="true">
+            <span className="fortune-particle particle-1" />
+            <span className="fortune-particle particle-2" />
+            <span className="fortune-particle particle-3" />
+            <span className="fortune-particle particle-4" />
+            <span className="fortune-particle particle-5" />
 
-          <div className="crystal-orb-wrap" aria-hidden="true">
+            <div className="fortune-orbit orbit-1"><span className="orbit-card" /></div>
+            <div className="fortune-orbit orbit-2"><span className="orbit-card" /></div>
+            <div className="fortune-orbit orbit-3"><span className="orbit-card" /></div>
+
             <motion.div
-              className="crystal-orb-glow"
-              animate={{ opacity: [0.45, 0.8, 0.45], scale: [0.96, 1.08, 0.96] }}
-              transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
-            />
-            <motion.div
-              className="crystal-orb"
-              animate={{ y: [0, -6, 0] }}
-              transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+              className="fortune-orb"
+              animate={{ y: [0, -6, 0], scale: [1, 1.02, 1] }}
+              transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
             >
-              <div className="crystal-orb-core" />
+              <div className="fortune-orb-core" />
             </motion.div>
           </div>
-
-          <p className="tarot-loader-text">Сфера открывает знаки и шепот карт...</p>
+          <p className="fortune-loader-title">Сфера открывает знаки...</p>
+          <p className="fortune-loader-subtitle">Карты складываются в ответ</p>
         </motion.div>
       )}
 
