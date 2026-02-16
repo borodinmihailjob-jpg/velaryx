@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     translate_via_google_free: bool = True
     translation_timeout_seconds: float = 8.0
 
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_timeout_seconds: float = 20.0
+
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()
         if not raw:

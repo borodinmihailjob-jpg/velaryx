@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from . import models
 from .config import settings
 from .astro_engine import calculate_natal_chart
+from .llm_engine import interpret_combo_insight, interpret_tarot_reading, llm_provider_label
 from .security import expiry_after_days, generate_token
 from .tarot_engine import build_seed, card_image_url, draw_cards, supported_spreads
 
@@ -438,12 +439,34 @@ def get_tarot_session(db: Session, user_id: int, session_id) -> models.TarotSess
     return session
 
 
+def build_tarot_cards_payload(cards: list[models.TarotCard]) -> list[dict]:
+    return [
+        {
+            "position": card.position,
+            "slot_label": card.slot_label,
+            "card_name": card.card_name,
+            "is_reversed": card.is_reversed,
+            "meaning": card.meaning,
+            "image_url": card_image_url(card.card_name),
+            "provider": settings.tarot_provider,
+        }
+        for card in sorted(cards, key=lambda c: c.position)
+    ]
+
+
+def build_tarot_ai_interpretation(question: str | None, cards_payload: list[dict]) -> tuple[str | None, str | None]:
+    text = interpret_tarot_reading(question=question, cards=cards_payload)
+    if not text:
+        return None, None
+    return text, llm_provider_label()
+
+
 def build_combo_insight(
     db: Session,
     user_id: int,
     question: str | None,
     spread_type: str,
-) -> tuple[models.NatalChart, models.DailyForecast, models.TarotSession, list[dict], str]:
+) -> tuple[models.NatalChart, models.DailyForecast, models.TarotSession, list[dict], str, str | None]:
     chart = get_latest_natal_chart(db=db, user_id=user_id)
     forecast = get_or_create_daily_forecast(db=db, user_id=user_id, forecast_date=date.today())
 
@@ -454,20 +477,7 @@ def build_combo_insight(
         question=question,
     )
     session_with_cards = get_tarot_session(db=db, user_id=user_id, session_id=session.id)
-    sorted_cards = sorted(session_with_cards.cards, key=lambda c: c.position)
-
-    tarot_cards_payload = [
-        {
-            "position": card.position,
-            "slot_label": card.slot_label,
-            "card_name": card.card_name,
-            "is_reversed": card.is_reversed,
-            "meaning": card.meaning,
-            "image_url": card_image_url(card.card_name),
-            "provider": settings.tarot_provider,
-        }
-        for card in sorted_cards
-    ]
+    tarot_cards_payload = build_tarot_cards_payload(session_with_cards.cards)
 
     first_card = tarot_cards_payload[0]["card_name"] if tarot_cards_payload else "карты"
     natal_summary = chart.chart_payload.get("interpretation", {}).get("summary", "")
@@ -475,8 +485,19 @@ def build_combo_insight(
         f"{natal_summary} Сегодняшний фокус: {forecast.payload.get('focus', 'баланс')}. "
         f"Ключ карты дня: {first_card}. Действуйте через маленькие шаги и фиксируйте результат."
     ).strip()
+    llm_provider = None
 
-    return chart, forecast, session_with_cards, tarot_cards_payload, combined_advice
+    llm_advice = interpret_combo_insight(
+        question=question,
+        natal_summary=str(natal_summary or ""),
+        daily_summary=str(forecast.summary or ""),
+        cards=tarot_cards_payload,
+    )
+    if llm_advice:
+        combined_advice = llm_advice
+        llm_provider = llm_provider_label()
+
+    return chart, forecast, session_with_cards, tarot_cards_payload, combined_advice, llm_provider
 
 
 def create_compat_invite(db: Session, inviter_user_id: int, ttl_days: int, max_uses: int) -> models.CompatInvite:

@@ -616,6 +616,13 @@ function Tarot({ onBack }) {
               <p className="tarot-meaning">{card.meaning}</p>
             </motion.article>
           ))}
+          {reading.ai_interpretation && (
+            <motion.article className="story-card" variants={staggerItem}>
+              <p className="section-title">Интерпретация</p>
+              <p>{reading.ai_interpretation}</p>
+              {reading.llm_provider && <small>Источник: {reading.llm_provider}</small>}
+            </motion.article>
+          )}
         </motion.div>
       )}
     </Shell>
@@ -685,6 +692,10 @@ function ComboInsights({ onBack }) {
               <span key={`${card.position}-${card.card_name}`}>{card.card_name}</span>
             ))}
           </div>
+
+          {result.llm_provider && (
+            <small>Источник интерпретации: {result.llm_provider}</small>
+          )}
         </motion.div>
       )}
     </Shell>

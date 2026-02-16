@@ -12,6 +12,7 @@ Telegram bot + Mini App for astrology, tarot, compatibility deep-links, combo in
 - Natal profile + full natal map (`/v1/natal/*`)
 - Daily forecast + stories mode (`/v1/forecast/*`)
 - Tarot spreads endpoint (`/v1/tarot/*`)
+- Gemini AI interpretation for tarot/combo (optional, with fallback)
 - Compatibility invite/start flow with deep-links (`comp_*`)
 - Combo endpoint (astrology + tarot) (`/v1/insights/astro-tarot`)
 - PDF report endpoint (`/v1/reports/natal.pdf`)
@@ -57,6 +58,9 @@ alembic upgrade head
 - Optional external engines:
 - `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`
 - `TAROT_PROVIDER=tarotapi_dev`
+- Optional LLM for tarot explanations:
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL` (default `gemini-2.0-flash`)
 4. Keep production security flags:
 - `REQUIRE_TELEGRAM_INIT_DATA=true`
 - `ALLOW_INSECURE_DEV_AUTH=false`
@@ -94,3 +98,4 @@ alembic upgrade head
   - Tarot text API: `tarotapi.dev` via `TAROT_PROVIDER=tarotapi_dev`
   - Tarot card images: `metabismuth/tarot-json` cards CDN (`TAROT_IMAGE_BASE_URL`)
 - API responses are auto-localized to Russian by default (`ENABLE_RESPONSE_LOCALIZATION=true`).
+- If `GEMINI_API_KEY` is not set, tarot/combo responses continue using local fallback logic.

@@ -77,6 +77,14 @@ services:
         value: "true"
       - key: TRANSLATION_TIMEOUT_SECONDS
         value: "8"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: GEMINI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta
+      - key: GEMINI_TIMEOUT_SECONDS
+        value: "20"
 
   - type: worker
     name: astrobot-bot

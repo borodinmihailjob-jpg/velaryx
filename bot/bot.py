@@ -220,6 +220,11 @@ async def tarot_handler(message: Message) -> None:
         orientation = "перевернутая" if card["is_reversed"] else "прямая"
         lines.append(f"{card['position']}. {card['card_name']} ({orientation})")
 
+    ai_text = reading.get("ai_interpretation")
+    if ai_text:
+        lines.append("")
+        lines.append(ai_text)
+
     lines.append(f"\nПолная версия: {miniapp_screen_link('tarot')}")
     await message.answer("\n".join(lines))
 
@@ -254,6 +259,7 @@ async def combo_handler(message: Message) -> None:
     await message.answer(
         "Комбо: астрология + таро\n"
         f"{insight.get('combined_advice', '')}\n"
+        f"Источник: {insight.get('llm_provider') or 'локальная логика'}\n"
         f"Карта-фокус: {card_name or '—'}\n\n"
         f"Открыть в Mini App: {miniapp_screen_link('combo')}"
     )

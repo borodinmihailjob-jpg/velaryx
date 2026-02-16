@@ -25,12 +25,19 @@ def draw_tarot(
         question=payload.question,
     )
     cards = services.get_tarot_session(db=db, user_id=user.id, session_id=session.id).cards
+    cards_payload = services.build_tarot_cards_payload(cards)
+    ai_interpretation, llm_provider = services.build_tarot_ai_interpretation(
+        question=session.question,
+        cards_payload=cards_payload,
+    )
 
     return schemas.TarotSessionResponse(
         session_id=session.id,
         spread_type=session.spread_type,
         question=session.question,
         created_at=session.created_at,
+        ai_interpretation=ai_interpretation,
+        llm_provider=llm_provider,
         cards=[
             schemas.TarotCardResponse(
                 position=card.position,
@@ -53,21 +60,24 @@ def get_tarot_session(
     user: models.User = Depends(current_user_dep),
 ):
     session = services.get_tarot_session(db=db, user_id=user.id, session_id=session_id)
+    cards_payload = services.build_tarot_cards_payload(session.cards)
     return schemas.TarotSessionResponse(
         session_id=session.id,
         spread_type=session.spread_type,
         question=session.question,
         created_at=session.created_at,
+        ai_interpretation=None,
+        llm_provider=None,
         cards=[
             schemas.TarotCardResponse(
-                position=card.position,
-                slot_label=card.slot_label,
-                card_name=card.card_name,
-                is_reversed=card.is_reversed,
-                meaning=card.meaning,
-                image_url=card_image_url(card.card_name),
-                provider=settings.tarot_provider,
+                position=card["position"],
+                slot_label=card["slot_label"],
+                card_name=card["card_name"],
+                is_reversed=card["is_reversed"],
+                meaning=card["meaning"],
+                image_url=card["image_url"],
+                provider=card["provider"],
             )
-            for card in sorted(session.cards, key=lambda c: c.position)
+            for card in cards_payload
         ],
     )

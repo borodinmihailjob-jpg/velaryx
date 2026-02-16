@@ -14,7 +14,7 @@ def astro_tarot_insight(
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
 ):
-    chart, forecast, session, cards, combined_advice = services.build_combo_insight(
+    chart, forecast, session, cards, combined_advice, llm_provider = services.build_combo_insight(
         db=db,
         user_id=user.id,
         question=payload.question,
@@ -30,6 +30,7 @@ def astro_tarot_insight(
         natal_summary=natal_summary,
         daily_summary=forecast.summary,
         tarot_session_id=session.id,
+        llm_provider=llm_provider,
         tarot_cards=[
             schemas.TarotCardResponse(
                 position=card["position"],

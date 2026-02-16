@@ -162,6 +162,8 @@ class TarotSessionResponse(BaseModel):
     question: str | None
     created_at: datetime
     cards: list[TarotCardResponse]
+    ai_interpretation: str | None = None
+    llm_provider: str | None = None
 
 
 class ComboInsightResponse(BaseModel):
@@ -169,6 +171,7 @@ class ComboInsightResponse(BaseModel):
     natal_summary: str
     daily_summary: str
     tarot_session_id: UUID
+    llm_provider: str | None = None
     tarot_cards: list[TarotCardResponse]
     combined_advice: str
 
