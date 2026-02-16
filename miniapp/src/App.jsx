@@ -81,13 +81,11 @@ function useStartParam() {
 
 function startParamToView(startParam) {
   if (!startParam) return null;
-  if (startParam.startsWith('comp_')) return 'compat';
   const mapping = {
     sc_onboarding: 'onboarding',
     sc_natal: 'natal',
     sc_stories: 'stories',
-    sc_tarot: 'tarot',
-    sc_combo: 'combo'
+    sc_tarot: 'tarot'
   };
   return mapping[startParam] || null;
 }
@@ -107,9 +105,9 @@ function Hint({ text }) {
   );
 }
 
-function Shell({ title, subtitle, children, onBack }) {
+function Shell({ title, subtitle, children, onBack, className = '' }) {
   return (
-    <motion.main className="screen" variants={pageVariants} initial="initial" animate="animate" exit="exit">
+    <motion.main className={`screen ${className}`.trim()} variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <header className="screen-head">
         <div>
           {onBack && (
@@ -351,37 +349,15 @@ function Onboarding({ onComplete }) {
   );
 }
 
-function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenCombo, onResetOnboarding }) {
-  const [compatLink, setCompatLink] = useState('');
-  const [compatLoading, setCompatLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const createCompatLink = async () => {
-    setError('');
-    setCompatLoading(true);
-    try {
-      const invite = await apiRequest('/v1/compat/invites', {
-        method: 'POST',
-        body: JSON.stringify({ ttl_days: 7, max_uses: 1 })
-      });
-      setCompatLink(buildStartAppLink(invite.token));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setCompatLoading(false);
-    }
-  };
-
+function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onResetOnboarding }) {
   const menuItems = [
-    { icon: '✨', label: 'Натальная карта', hint: 'Полный разбор и PDF', action: onOpenNatal },
+    { icon: '✨', label: 'Натальная карта', hint: 'Полный персональный разбор', action: onOpenNatal },
     { icon: '🌙', label: 'Сторис дня', hint: 'Короткие персональные инсайты', action: onOpenStories },
-    { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями', action: onOpenTarot },
-    { icon: '🧭', label: 'Комбо разбор', hint: 'Астрология + таро', action: onOpenCombo },
-    { icon: '💜', label: 'Совместимость', hint: 'Виральная ссылка для пары', action: createCompatLink }
+    { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями и анимацией', action: onOpenTarot }
   ];
 
   return (
-    <Shell title="Созвездие" subtitle="Астрология, таро и совместимость в одном потоке.">
+    <Shell title="Созвездие" subtitle="Астрология и таро в одном потоке.">
       <motion.div className="card-grid" variants={staggerContainer} initial="initial" animate="animate">
         {menuItems.map((item) => (
           <motion.button
@@ -390,7 +366,6 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenCombo, onRes
             onClick={item.action}
             variants={staggerItem}
             whileTap={{ scale: 0.97 }}
-            disabled={item.label === 'Совместимость' && compatLoading}
           >
             <span className="menu-icon">{item.icon}</span>
             <span className="menu-text">
@@ -401,25 +376,6 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onOpenCombo, onRes
         ))}
       </motion.div>
 
-      <AnimatePresence>
-        {compatLink && (
-          <motion.div
-            className="story-card"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            <p className="section-title">Ссылка для партнёра</p>
-            <p className="link-box">{compatLink}</p>
-            <button className="ghost" onClick={() => shareLink(compatLink, 'Проверь нашу совместимость 💫')}>
-              Поделиться созвездием
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {error && <p className="error">{error}</p>}
-
       <button className="profile-toggle" onClick={onResetOnboarding}>Обновить данные рождения</button>
     </Shell>
   );
@@ -429,7 +385,6 @@ function NatalChart({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [chart, setChart] = useState(null);
-  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     apiRequest('/v1/natal/full')
@@ -437,28 +392,6 @@ function NatalChart({ onBack }) {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-
-  const downloadPdf = async () => {
-    setDownloading(true);
-    setError('');
-    try {
-      const linkPayload = await apiRequest('/v1/reports/natal-link');
-      const url = linkPayload?.url;
-      if (!url) {
-        throw new Error('Не удалось подготовить ссылку на PDF');
-      }
-
-      if (window.Telegram?.WebApp?.openLink) {
-        window.Telegram.WebApp.openLink(url);
-      } else {
-        window.open(url, '_blank');
-      }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   return (
     <Shell title="Натальная карта" subtitle="Подробный персональный разбор" onBack={onBack}>
@@ -485,10 +418,6 @@ function NatalChart({ onBack }) {
               <p>{section.text}</p>
             </motion.article>
           ))}
-
-          <button className="cta" onClick={downloadPdf} disabled={downloading}>
-            {downloading ? 'Готовим PDF...' : 'Скачать PDF-отчёт'}
-          </button>
         </motion.div>
       )}
     </Shell>
@@ -574,7 +503,13 @@ function Tarot({ onBack }) {
   };
 
   return (
-    <Shell title="Таро-расклад" subtitle="Задайте вопрос и вытяните 3 карты" onBack={onBack}>
+    <Shell
+      title="Таро-расклад"
+      subtitle="Задайте вопрос и вытяните 3 карты"
+      onBack={onBack}
+      className="tarot-screen"
+    >
+      <div className="tarot-table-sigil" aria-hidden="true">MYSTERIUM TAROT</div>
       <div className="stack">
         <label>
           Ваш вопрос
@@ -592,6 +527,50 @@ function Tarot({ onBack }) {
       </div>
 
       {error && <p className="error">{error}</p>}
+
+      {loading && (
+        <motion.div
+          className="tarot-loader"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+        >
+          <div className="tarot-loader-table" aria-hidden="true">
+            <motion.div
+              className="tarot-loader-card"
+              animate={{ y: [0, -6, 0], rotate: [-3, -1, -3] }}
+              transition={{ repeat: Infinity, duration: 2.4, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="tarot-loader-card tarot-loader-card-center"
+              animate={{ y: [0, -10, 0], rotate: [0, 2, 0] }}
+              transition={{ repeat: Infinity, duration: 2.1, ease: 'easeInOut', delay: 0.2 }}
+            />
+            <motion.div
+              className="tarot-loader-card"
+              animate={{ y: [0, -7, 0], rotate: [3, 1, 3] }}
+              transition={{ repeat: Infinity, duration: 2.6, ease: 'easeInOut', delay: 0.4 }}
+            />
+          </div>
+
+          <div className="crystal-orb-wrap" aria-hidden="true">
+            <motion.div
+              className="crystal-orb-glow"
+              animate={{ opacity: [0.45, 0.8, 0.45], scale: [0.96, 1.08, 0.96] }}
+              transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="crystal-orb"
+              animate={{ y: [0, -6, 0] }}
+              transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+            >
+              <div className="crystal-orb-core" />
+            </motion.div>
+          </div>
+
+          <p className="tarot-loader-text">Сфера открывает знаки и шепот карт...</p>
+        </motion.div>
+      )}
 
       {reading && (
         <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate" style={{ gap: 12 }}>
@@ -629,161 +608,6 @@ function Tarot({ onBack }) {
   );
 }
 
-function ComboInsights({ onBack }) {
-  const [question, setQuestion] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
-
-  const runCombo = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiRequest('/v1/insights/astro-tarot', {
-        method: 'POST',
-        body: JSON.stringify({ question, spread_type: 'three_card' })
-      });
-      setResult(data);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Shell title="Комбо разбор" subtitle="Слияние натала, дня и таро" onBack={onBack}>
-      <div className="stack">
-        <label>
-          Запрос
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Что сейчас важнее всего в моей ситуации?"
-          />
-        </label>
-
-        <button className="cta" onClick={runCombo} disabled={loading}>
-          {loading ? 'Собираем сигналы...' : 'Запустить комбо'}
-        </button>
-      </div>
-
-      {error && <p className="error">{error}</p>}
-
-      {result && (
-        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
-          <motion.article className="story-card" variants={staggerItem}>
-            <p className="section-title">Астрологический фон</p>
-            <p>{result.natal_summary}</p>
-          </motion.article>
-
-          <motion.article className="story-card" variants={staggerItem}>
-            <p className="section-title">Прогноз дня</p>
-            <p>{result.daily_summary}</p>
-          </motion.article>
-
-          <motion.article className="story-card" variants={staggerItem}>
-            <p className="section-title">Единый совет</p>
-            <p>{result.combined_advice}</p>
-          </motion.article>
-
-          <div className="chip-row">
-            {(result.tarot_cards || []).slice(0, 3).map((card) => (
-              <span key={`${card.position}-${card.card_name}`}>{card.card_name}</span>
-            ))}
-          </div>
-
-          {result.llm_provider && (
-            <small>Источник интерпретации: {result.llm_provider}</small>
-          )}
-        </motion.div>
-      )}
-    </Shell>
-  );
-}
-
-function CompatibilityLanding({ token, onBack }) {
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const start = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiRequest('/v1/compat/start', {
-        method: 'POST',
-        body: JSON.stringify({ invite_token: token })
-      });
-      setResult(data);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const shareOwnLink = async () => {
-    try {
-      const invite = await apiRequest('/v1/compat/invites', {
-        method: 'POST',
-        body: JSON.stringify({ ttl_days: 7, max_uses: 1 })
-      });
-      shareLink(buildStartAppLink(invite.token), 'Твоя очередь проверить совместимость 💫');
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
-  return (
-    <Shell title="Наше созвездие" subtitle="Совместимость по реферальной ссылке" onBack={onBack}>
-      {!result && (
-        <>
-          <div className="compat-hero">
-            <div className="compat-constellation">
-              <motion.div className="compat-star" animate={{ y: [-4, 4, -4] }} transition={{ repeat: Infinity, duration: 3 }} />
-              <motion.div className="compat-star" animate={{ y: [3, -5, 3] }} transition={{ repeat: Infinity, duration: 3.5, delay: 0.5 }} />
-              <motion.div className="compat-star" animate={{ y: [-3, 4, -3] }} transition={{ repeat: Infinity, duration: 2.8, delay: 1 }} />
-            </div>
-          </div>
-          <button className="cta" onClick={start} disabled={loading}>
-            {loading ? 'Считаем звёзды...' : 'Узнать совместимость'}
-          </button>
-        </>
-      )}
-
-      {error && <p className="error">{error}</p>}
-
-      {result && (
-        <motion.div className="stack" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="compat-hero">
-            <span className="compat-score">{result.score}%</span>
-            <span className="compat-score-label">Совместимость</span>
-          </div>
-
-          <div className="story-card"><p>{result.summary}</p></div>
-
-          {Array.isArray(result.strengths) && result.strengths.length > 0 && (
-            <div className="compat-section">
-              <h3>Сильные стороны</h3>
-              <ul>{result.strengths.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
-            </div>
-          )}
-
-          {Array.isArray(result.growth_areas) && result.growth_areas.length > 0 && (
-            <div className="compat-section">
-              <h3>Точки роста</h3>
-              <ul>{result.growth_areas.map((item, idx) => <li key={idx}>{item}</li>)}</ul>
-            </div>
-          )}
-
-          <button className="ghost" onClick={shareOwnLink}>Поделиться созвездием</button>
-        </motion.div>
-      )}
-    </Shell>
-  );
-}
-
 export default function App() {
   const startParam = useStartParam();
   const [view, setView] = useState('dashboard');
@@ -809,17 +633,12 @@ export default function App() {
   if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} />;
   if (view === 'stories') return <Stories onBack={() => setView('dashboard')} />;
   if (view === 'tarot') return <Tarot onBack={() => setView('dashboard')} />;
-  if (view === 'combo') return <ComboInsights onBack={() => setView('dashboard')} />;
-  if (view === 'compat' && startParam?.startsWith('comp_')) {
-    return <CompatibilityLanding token={startParam} onBack={() => setView('dashboard')} />;
-  }
 
   return (
     <Dashboard
       onOpenNatal={() => setView('natal')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
-      onOpenCombo={() => setView('combo')}
       onResetOnboarding={() => {
         localStorage.removeItem('onboarding_complete');
         setHasOnboarding(false);

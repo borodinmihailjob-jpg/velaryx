@@ -1,11 +1,10 @@
 import asyncio
 import os
-from datetime import datetime, timezone
 
 import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import Message
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -57,17 +56,6 @@ def miniapp_screen_link(screen_code: str) -> str:
     return miniapp_link(f"sc_{screen_code}")
 
 
-async def create_invite_token(tg_user_id: int) -> str:
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.post(
-            f"{API_BASE_URL}/v1/compat/invites",
-            headers=_headers(tg_user_id),
-            json={"ttl_days": 7, "max_uses": 1},
-        )
-        response.raise_for_status()
-    return response.json()["token"]
-
-
 async def fetch_daily_forecast(tg_user_id: int) -> dict:
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(
@@ -88,17 +76,6 @@ async def fetch_natal_full(tg_user_id: int) -> dict:
         return response.json()
 
 
-async def fetch_combo_insight(tg_user_id: int, question: str | None) -> dict:
-    async with httpx.AsyncClient(timeout=25) as client:
-        response = await client.post(
-            f"{API_BASE_URL}/v1/insights/astro-tarot",
-            headers=_headers(tg_user_id),
-            json={"question": question, "spread_type": "three_card"},
-        )
-        response.raise_for_status()
-        return response.json()
-
-
 async def draw_tarot_for_user(tg_user_id: int, question: str | None) -> dict:
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(
@@ -110,16 +87,6 @@ async def draw_tarot_for_user(tg_user_id: int, question: str | None) -> dict:
         return response.json()
 
 
-async def fetch_natal_pdf(tg_user_id: int) -> bytes:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            f"{API_BASE_URL}/v1/reports/natal.pdf",
-            headers=_headers(tg_user_id),
-        )
-        response.raise_for_status()
-        return response.content
-
-
 @dp.message(Command("start"))
 async def start_handler(message: Message) -> None:
     await message.answer(
@@ -127,10 +94,7 @@ async def start_handler(message: Message) -> None:
         "/app - открыть Mini App\n"
         "/natal - полная натальная карта\n"
         "/daily - ежедневный прогноз\n"
-        "/tarot [вопрос] - расклад 3 карты\n"
-        "/combo [вопрос] - астрология + таро\n"
-        "/compat - ссылка совместимости\n"
-        "/report - скачать PDF-отчет"
+        "/tarot [вопрос] - расклад 3 карты"
     )
 
 
@@ -228,92 +192,6 @@ async def tarot_handler(message: Message) -> None:
 
     lines.append(f"\nПолная версия: {miniapp_screen_link('tarot')}")
     await message.answer("\n".join(lines))
-
-
-@dp.message(Command("combo"))
-async def combo_handler(message: Message) -> None:
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя Telegram.")
-        return
-
-    question = _command_arg(message.text)
-    try:
-        insight = await fetch_combo_insight(message.from_user.id, question)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            await message.answer(
-                "Для комбинированного сценария сначала нужна натальная карта.\n"
-                f"Открыть: {miniapp_screen_link('onboarding')}"
-            )
-            return
-        await message.answer("Не удалось сделать комбинированный разбор. Попробуйте позже.")
-        return
-    except Exception:
-        await message.answer("Не удалось сделать комбинированный разбор. Попробуйте позже.")
-        return
-
-    card_name = ""
-    cards = insight.get("tarot_cards") or []
-    if cards:
-        card_name = cards[0].get("card_name", "")
-
-    await message.answer(
-        "Комбо: астрология + таро\n"
-        f"{insight.get('combined_advice', '')}\n"
-        f"Источник: {insight.get('llm_provider') or 'локальная логика'}\n"
-        f"Карта-фокус: {card_name or '—'}\n\n"
-        f"Открыть в Mini App: {miniapp_screen_link('combo')}"
-    )
-
-
-@dp.message(Command("report"))
-async def report_handler(message: Message) -> None:
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя Telegram.")
-        return
-
-    try:
-        pdf_bytes = await fetch_natal_pdf(message.from_user.id)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            await message.answer(
-                "Сначала создайте натальную карту, затем сформируем PDF.\n"
-                f"Открыть: {miniapp_screen_link('onboarding')}"
-            )
-            return
-        await message.answer("Не удалось сформировать PDF-отчет. Попробуйте позже.")
-        return
-    except Exception:
-        await message.answer("Не удалось сформировать PDF-отчет. Попробуйте позже.")
-        return
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    filename = f"natal-report-{timestamp}.pdf"
-    await message.answer_document(
-        BufferedInputFile(pdf_bytes, filename=filename),
-        caption="Ваш PDF-отчет по натальной карте",
-    )
-
-
-@dp.message(Command("compat"))
-async def compat_handler(message: Message) -> None:
-    if not BOT_USERNAME:
-        await message.answer("Нужно задать BOT_USERNAME в окружении.")
-        return
-    if not message.from_user:
-        await message.answer("Не удалось определить пользователя Telegram.")
-        return
-
-    try:
-        token = await create_invite_token(message.from_user.id)
-    except Exception:
-        await message.answer("Не удалось создать ссылку совместимости. Попробуйте позже.")
-        return
-
-    await message.answer(
-        "Поделитесь ссылкой и узнайте совместимость:\n"
-        f"{miniapp_link(token)}"
-    )
 
 
 @dp.message(F.text)

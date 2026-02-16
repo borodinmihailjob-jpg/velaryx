@@ -44,9 +44,9 @@ def test_internal_api_key_auth(client):
 
     try:
         response = client.post(
-            "/v1/compat/invites",
+            "/v1/tarot/draw",
             headers={"X-TG-USER-ID": "900", "X-Internal-API-Key": "internal-secret"},
-            json={"ttl_days": 7, "max_uses": 1},
+            json={"spread_type": "three_card", "question": "Тест"},
         )
         assert response.status_code == 200
     finally:

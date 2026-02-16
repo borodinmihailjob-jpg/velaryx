@@ -615,6 +615,156 @@ button:disabled {
   line-height: 1.5;
 }
 
+/* ===== Tarot Scene ===== */
+
+.tarot-screen {
+  position: relative;
+  isolation: isolate;
+}
+
+.tarot-screen::before {
+  content: '';
+  position: absolute;
+  inset: 68px -20px -24px;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(255, 224, 168, 0.18) 0%, rgba(255, 224, 168, 0.04) 28%, transparent 55%),
+    radial-gradient(circle at 20% 78%, rgba(179, 112, 46, 0.2), transparent 42%),
+    radial-gradient(circle at 80% 78%, rgba(179, 112, 46, 0.2), transparent 42%),
+    linear-gradient(180deg, rgba(10, 16, 26, 0) 0%, rgba(35, 20, 16, 0.56) 28%, rgba(30, 17, 13, 0.78) 100%);
+  filter: blur(0.5px);
+}
+
+.tarot-screen::after {
+  content: '';
+  position: absolute;
+  inset: 140px 8px 24px;
+  border-radius: 20px;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(189, 141, 85, 0.12), transparent 48%),
+    repeating-linear-gradient(
+      -27deg,
+      rgba(127, 85, 46, 0.1) 0,
+      rgba(127, 85, 46, 0.1) 8px,
+      rgba(58, 37, 24, 0.1) 8px,
+      rgba(58, 37, 24, 0.1) 16px
+    );
+  border: 1px solid rgba(224, 185, 136, 0.12);
+  box-shadow: inset 0 0 50px rgba(12, 7, 5, 0.7);
+}
+
+.tarot-table-sigil {
+  position: absolute;
+  left: 50%;
+  top: 166px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.34em;
+  color: rgba(243, 205, 160, 0.26);
+  text-transform: uppercase;
+}
+
+.tarot-loader {
+  position: relative;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(219, 178, 130, 0.22);
+  background:
+    radial-gradient(circle at 50% 5%, rgba(255, 241, 224, 0.24), transparent 40%),
+    linear-gradient(160deg, rgba(33, 25, 37, 0.74), rgba(21, 16, 30, 0.86));
+  overflow: hidden;
+  padding: 22px 18px 16px;
+}
+
+.tarot-loader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 42%, rgba(96, 70, 153, 0.22), transparent 48%);
+  pointer-events: none;
+}
+
+.tarot-loader-table {
+  position: relative;
+  z-index: 1;
+  height: 148px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+}
+
+.tarot-loader-card {
+  width: 66px;
+  height: 108px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 220, 173, 0.38);
+  background:
+    linear-gradient(150deg, rgba(214, 169, 118, 0.35), rgba(46, 34, 74, 0.75)),
+    repeating-linear-gradient(
+      45deg,
+      rgba(250, 239, 220, 0.12) 0,
+      rgba(250, 239, 220, 0.12) 4px,
+      rgba(127, 89, 56, 0.1) 4px,
+      rgba(127, 89, 56, 0.1) 8px
+    );
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.36);
+}
+
+.tarot-loader-card-center {
+  height: 114px;
+}
+
+.crystal-orb-wrap {
+  position: relative;
+  z-index: 2;
+  height: 126px;
+  display: grid;
+  place-items: center;
+  margin-top: -76px;
+}
+
+.crystal-orb-glow {
+  position: absolute;
+  width: 136px;
+  height: 136px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(216, 196, 255, 0.46), rgba(120, 82, 214, 0.15) 52%, transparent 74%);
+  filter: blur(7px);
+}
+
+.crystal-orb {
+  width: 98px;
+  height: 98px;
+  border-radius: 50%;
+  border: 1px solid rgba(238, 228, 255, 0.58);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.58), rgba(196, 174, 255, 0.22) 38%, rgba(64, 44, 104, 0.78) 88%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(58, 36, 94, 0.42));
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 0 18px rgba(255, 255, 255, 0.15),
+    0 12px 26px rgba(52, 28, 92, 0.45);
+}
+
+.crystal-orb-core {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(193, 171, 253, 0.32) 56%, transparent 70%);
+  filter: blur(0.3px);
+}
+
+.tarot-loader-text {
+  text-align: center;
+  font-size: 0.9rem;
+  color: rgba(239, 223, 197, 0.9);
+  letter-spacing: 0.02em;
+}
+
 /* ===== Status Badges ===== */
 
 .status-badge {

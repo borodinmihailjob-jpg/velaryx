@@ -1,6 +1,6 @@
 # AstroBot Monorepo
 
-Telegram bot + Mini App for astrology, tarot, compatibility deep-links, combo insights, and PDF reports.
+Telegram bot + Mini App for astrology and tarot.
 
 ## Stack
 - `backend`: FastAPI + SQLAlchemy + Alembic + PostgreSQL + Redis
@@ -12,11 +12,8 @@ Telegram bot + Mini App for astrology, tarot, compatibility deep-links, combo in
 - Natal profile + full natal map (`/v1/natal/*`)
 - Daily forecast + stories mode (`/v1/forecast/*`)
 - Tarot spreads endpoint (`/v1/tarot/*`)
-- Gemini AI interpretation for tarot/combo (optional, with fallback)
-- Compatibility invite/start flow with deep-links (`comp_*`)
-- Combo endpoint (astrology + tarot) (`/v1/insights/astro-tarot`)
-- PDF report endpoint (`/v1/reports/natal.pdf`)
-- Telegram Mini App `startapp` routing (`sc_*`, `comp_*`)
+- AI interpretation for tarot (OpenRouter/Gemini with fallback)
+- Telegram Mini App `startapp` routing (`sc_*`)
 - Telegram `initData` signature validation on backend
 
 ## Local Development
@@ -77,11 +74,9 @@ alembic upgrade head
 1. Create bot via `@BotFather`, get token.
 2. Set Mini App button in bot menu for `https://t.me/<BOT_USERNAME>/app`.
 3. Ensure Mini App opens with deep links:
-- `https://t.me/<BOT_USERNAME>/app?startapp=comp_<token>`
 - `https://t.me/<BOT_USERNAME>/app?startapp=sc_natal`
 - `https://t.me/<BOT_USERNAME>/app?startapp=sc_stories`
 - `https://t.me/<BOT_USERNAME>/app?startapp=sc_tarot`
-- `https://t.me/<BOT_USERNAME>/app?startapp=sc_combo`
 4. For secure operations, Mini App sends `X-Telegram-Init-Data` header.
 
 ## API Summary
@@ -93,10 +88,6 @@ alembic upgrade head
 - `GET /v1/forecast/stories`
 - `POST /v1/tarot/draw`
 - `GET /v1/tarot/{session_id}`
-- `POST /v1/insights/astro-tarot`
-- `GET /v1/reports/natal.pdf`
-- `POST /v1/compat/invites`
-- `POST /v1/compat/start`
 
 ## Notes
 - Astrology engine uses Swiss Ephemeris (`pyswisseph`) with fallback mode if ephemeris files are unavailable.
@@ -106,4 +97,4 @@ alembic upgrade head
   - Tarot text API: `tarotapi.dev` via `TAROT_PROVIDER=tarotapi_dev`
   - Tarot card images: `metabismuth/tarot-json` cards CDN (`TAROT_IMAGE_BASE_URL`)
 - API responses are auto-localized to Russian by default (`ENABLE_RESPONSE_LOCALIZATION=true`).
-- If `GEMINI_API_KEY` is not set, tarot/combo responses continue using local fallback logic.
+- If AI provider is unavailable, tarot returns fallback text and hides cards from response.
