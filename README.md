@@ -52,7 +52,7 @@ alembic upgrade head
 - `CORS_ORIGINS_RAW` (include miniapp public URL)
 - `VITE_API_BASE_URL` (public URL of `astrobot-api`)
 - `VITE_ALLOW_DEV_AUTH=false` (production miniapp should use Telegram initData only)
-- `VITE_TAROT_LOADING_GIF` (optional URL/path for tarot loading GIF, e.g. `/tarot-loader.gif`)
+- `VITE_TAROT_LOADING_GIF` (default is bundled `/tarot-loader.gif`, can be overridden with another URL/path)
 - `VITE_BOT_USERNAME`
 - Optional external engines:
 - `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`

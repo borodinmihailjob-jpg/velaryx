@@ -6,7 +6,7 @@ import { apiRequest } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
-const TAROT_LOADING_GIF = import.meta.env.VITE_TAROT_LOADING_GIF || '';
+const TAROT_LOADING_GIF = import.meta.env.VITE_TAROT_LOADING_GIF || '/tarot-loader.gif';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20, scale: 0.98 },

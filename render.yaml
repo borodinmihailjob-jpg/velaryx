@@ -145,7 +145,7 @@ services:
       - key: VITE_ALLOW_DEV_AUTH
         value: "false"
       - key: VITE_TAROT_LOADING_GIF
-        sync: false
+        value: /tarot-loader.gif
       - key: VITE_BOT_USERNAME
         sync: false
       - key: VITE_APP_NAME
