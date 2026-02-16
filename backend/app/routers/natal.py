@@ -48,6 +48,23 @@ def create_profile(
     )
 
 
+@router.get("/profile/latest", response_model=schemas.BirthProfileResponse)
+def get_latest_profile(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user_dep),
+):
+    profile = services.get_latest_birth_profile(db=db, user_id=user.id)
+    return schemas.BirthProfileResponse(
+        id=profile.id,
+        birth_date=profile.birth_date,
+        birth_time=profile.birth_time,
+        birth_place=profile.birth_place,
+        latitude=profile.latitude,
+        longitude=profile.longitude,
+        timezone=profile.timezone,
+    )
+
+
 @router.post("/calculate", response_model=schemas.NatalChartResponse)
 def calculate_natal(
     payload: schemas.NatalCalculateRequest,

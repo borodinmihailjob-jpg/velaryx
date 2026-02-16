@@ -78,6 +78,45 @@ function timezoneLabel(timezone) {
   return TZ_LABELS[timezone] || timezone.replaceAll('_', ' ');
 }
 
+function browserTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow';
+}
+
+function defaultBirthForm() {
+  return {
+    birth_date: '',
+    birth_time: '12:00',
+    birth_place: '',
+    latitude: '',
+    longitude: '',
+    timezone: browserTimezone()
+  };
+}
+
+function toTimeInputValue(rawValue) {
+  if (!rawValue) return '12:00';
+  const source = String(rawValue).trim();
+  if (!source) return '12:00';
+  const parts = source.split(':');
+  if (parts.length >= 2) {
+    const hh = String(parts[0]).padStart(2, '0').slice(0, 2);
+    const mm = String(parts[1]).padStart(2, '0').slice(0, 2);
+    return `${hh}:${mm}`;
+  }
+  return '12:00';
+}
+
+function profileToBirthForm(profile) {
+  return {
+    birth_date: String(profile?.birth_date || ''),
+    birth_time: toTimeInputValue(profile?.birth_time),
+    birth_place: String(profile?.birth_place || ''),
+    latitude: profile?.latitude != null ? String(profile.latitude) : '',
+    longitude: profile?.longitude != null ? String(profile.longitude) : '',
+    timezone: String(profile?.timezone || browserTimezone())
+  };
+}
+
 function buildStartAppLink(token) {
   return `https://t.me/${BOT_USERNAME}/${APP_NAME}?startapp=${token}`;
 }
@@ -150,17 +189,14 @@ function Shell({ title, subtitle, children, onBack, className = '' }) {
   );
 }
 
-function Onboarding({ onComplete }) {
+function Onboarding({ mode = 'create', onComplete, onBack }) {
+  const isEditMode = mode === 'edit';
   const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(isEditMode);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    birth_date: '',
-    birth_time: '12:00',
-    birth_place: '',
-    latitude: '',
-    longitude: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow'
-  });
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileMessageType, setProfileMessageType] = useState('info');
+  const [form, setForm] = useState(() => defaultBirthForm());
 
   const [citySuggestions, setCitySuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -204,6 +240,7 @@ function Onboarding({ onComplete }) {
   }, []);
 
   const handleCityInput = (value) => {
+    setProfileMessage('');
     setForm((prev) => ({ ...prev, birth_place: value, latitude: '', longitude: '' }));
     setCitySelected(false);
     searchCities(value);
@@ -225,16 +262,64 @@ function Onboarding({ onComplete }) {
   };
 
   const setLatitude = (value) => {
+    setProfileMessage('');
     setCitySelected(false);
     setShowManualCoords(true);
     setForm((prev) => ({ ...prev, latitude: value }));
   };
 
   const setLongitude = (value) => {
+    setProfileMessage('');
     setCitySelected(false);
     setShowManualCoords(true);
     setForm((prev) => ({ ...prev, longitude: value }));
   };
+
+  useEffect(() => {
+    if (!isEditMode) {
+      setLoadingProfile(false);
+      setProfileMessage('');
+      return undefined;
+    }
+
+    let active = true;
+    setLoadingProfile(true);
+    setError('');
+    setProfileMessage('');
+
+    apiRequest('/v1/natal/profile/latest')
+      .then((profile) => {
+        if (!active) return;
+        setForm(profileToBirthForm(profile));
+        setCitySelected(true);
+        setShowManualCoords(false);
+        setCitySearchStatus('idle');
+        setCitySuggestions([]);
+        setShowSuggestions(false);
+        setProfileMessage('Текущие данные загружены из профиля. Измените нужные поля и сохраните.');
+        setProfileMessageType('ok');
+      })
+      .catch((e) => {
+        if (!active) return;
+        const rawMessage = String(e?.message || e || '');
+        const lowered = rawMessage.toLowerCase();
+        if (lowered.includes('not found') || lowered.includes('404')) {
+          setProfileMessage('Сохранённые данные не найдены. Заполните форму и сохраните.');
+        } else {
+          setProfileMessage(
+            rawMessage || 'Не удалось загрузить сохранённые данные. Заполните форму вручную.'
+          );
+        }
+        setProfileMessageType('warning');
+      })
+      .finally(() => {
+        if (active) setLoadingProfile(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isEditMode]);
 
   useEffect(() => {
     const handleClick = (event) => {
@@ -323,9 +408,46 @@ function Onboarding({ onComplete }) {
     }
   };
 
+  const title = isEditMode ? 'Данные рождения' : 'Ваша звезда';
+  const subtitle = isEditMode
+    ? 'Проверьте и обновите профиль. Изменения применятся только после сохранения.'
+    : 'Заполните данные рождения для персональной карты';
+  const submitTitle = loading
+    ? (isEditMode ? 'Сохраняем изменения...' : 'Считаем карту...')
+    : (isEditMode ? 'Сохранить изменения' : 'Сохранить и продолжить');
+
   return (
-    <Shell title="Ваша звезда" subtitle="Заполните данные рождения для персональной карты">
+    <Shell title={title} subtitle={subtitle} onBack={isEditMode ? onBack : undefined}>
       <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+        <motion.article className="onboarding-intro" variants={staggerItem}>
+          <p className="section-title">{isEditMode ? 'Режим редактирования' : 'Первый шаг'}</p>
+          <p>
+            {isEditMode
+              ? 'Если нажмёте «Назад», текущие данные останутся без изменений.'
+              : 'Эти данные нужны для точного расчёта натальной карты и персональных прогнозов.'}
+          </p>
+          <div className="onboarding-points">
+            <span>Дата и время рождения</span>
+            <span>Город или координаты</span>
+            <span>Часовой пояс</span>
+          </div>
+        </motion.article>
+
+        {loadingProfile && (
+          <motion.div className="onboarding-message" variants={staggerItem}>
+            Загружаем сохранённые данные...
+          </motion.div>
+        )}
+
+        {profileMessage && !loadingProfile && (
+          <motion.div
+            className={`onboarding-message ${profileMessageType === 'warning' ? 'warning' : 'ok'}`}
+            variants={staggerItem}
+          >
+            {profileMessage}
+          </motion.div>
+        )}
+
         <motion.div variants={staggerItem}>
           <label>
             Дата рождения
@@ -446,11 +568,22 @@ function Onboarding({ onComplete }) {
           </motion.div>
         )}
 
-        <motion.div variants={staggerItem}>
-          <button className="cta" onClick={submit} disabled={loading || !canSubmit}>
-            {loading ? 'Считаем карту...' : 'Продолжить'}
-          </button>
-        </motion.div>
+        {isEditMode ? (
+          <motion.div variants={staggerItem} className="grid-2 onboarding-actions">
+            <button className="ghost" type="button" onClick={onBack} disabled={loading}>
+              Назад
+            </button>
+            <button className="cta" onClick={submit} disabled={loading || loadingProfile || !canSubmit}>
+              {submitTitle}
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div variants={staggerItem}>
+            <button className="cta" onClick={submit} disabled={loading || loadingProfile || !canSubmit}>
+              {submitTitle}
+            </button>
+          </motion.div>
+        )}
 
         {error && (
           <motion.p className="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -462,7 +595,7 @@ function Onboarding({ onComplete }) {
   );
 }
 
-function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onResetOnboarding }) {
+function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onEditBirthData }) {
   const menuItems = [
     { icon: '✨', label: 'Натальная карта', hint: 'Полный персональный разбор', action: onOpenNatal },
     { icon: '🌙', label: 'Сторис дня', hint: 'Короткие персональные инсайты', action: onOpenStories },
@@ -489,7 +622,7 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onResetOnboarding 
         ))}
       </motion.div>
 
-      <button className="profile-toggle" onClick={onResetOnboarding}>Обновить данные рождения</button>
+      <button className="profile-toggle" onClick={onEditBirthData}>Изменить данные рождения</button>
     </Shell>
   );
 }
@@ -850,7 +983,20 @@ export default function App() {
   }, [view]);
 
   if (view === 'onboarding' || !hasOnboarding) {
-    return <Onboarding onComplete={() => { setHasOnboarding(true); setView('dashboard'); }} />;
+    return <Onboarding mode="create" onComplete={() => { setHasOnboarding(true); setView('dashboard'); }} />;
+  }
+
+  if (view === 'profile_edit') {
+    return (
+      <Onboarding
+        mode="edit"
+        onBack={() => setView('dashboard')}
+        onComplete={() => {
+          setHasOnboarding(true);
+          setView('dashboard');
+        }}
+      />
+    );
   }
 
   if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} />;
@@ -862,11 +1008,7 @@ export default function App() {
       onOpenNatal={() => setView('natal')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
-      onResetOnboarding={() => {
-        localStorage.removeItem('onboarding_complete');
-        setHasOnboarding(false);
-        setView('onboarding');
-      }}
+      onEditBirthData={() => setView('profile_edit')}
     />
   );
 }

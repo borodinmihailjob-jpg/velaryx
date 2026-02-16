@@ -14,6 +14,13 @@ def test_natal_forecast_tarot_flow(client):
     assert profile_resp.status_code == 200
     profile_id = profile_resp.json()["id"]
 
+    latest_profile_resp = client.get(
+        "/v1/natal/profile/latest",
+        headers={"X-TG-USER-ID": "401"},
+    )
+    assert latest_profile_resp.status_code == 200
+    assert latest_profile_resp.json()["id"] == profile_id
+
     chart_resp = client.post(
         "/v1/natal/calculate",
         headers={"X-TG-USER-ID": "401"},

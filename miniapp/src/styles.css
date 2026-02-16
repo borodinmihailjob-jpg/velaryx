@@ -366,6 +366,60 @@ input:focus {
   line-height: 1.4;
 }
 
+.onboarding-intro {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.onboarding-points span {
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: var(--radius-full);
+  padding: 5px 10px;
+  font-size: 0.74rem;
+  color: #d8ddff;
+  line-height: 1.2;
+}
+
+.onboarding-message {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 11px 12px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+}
+
+.onboarding-message.ok {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.12);
+  color: #a7f3d0;
+}
+
+.onboarding-message.warning {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+
+.onboarding-actions .cta,
+.onboarding-actions .ghost {
+  width: 100%;
+}
+
 /* ===== City Autocomplete ===== */
 
 .city-autocomplete {

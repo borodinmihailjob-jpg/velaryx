@@ -143,6 +143,18 @@ def create_birth_profile(
     return profile
 
 
+def get_latest_birth_profile(db: Session, user_id: int) -> models.BirthProfile:
+    profile = (
+        db.query(models.BirthProfile)
+        .filter(models.BirthProfile.user_id == user_id)
+        .order_by(models.BirthProfile.created_at.desc())
+        .first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Birth profile not found")
+    return profile
+
+
 def calculate_and_store_natal_chart(db: Session, user_id: int, profile_id) -> models.NatalChart:
     profile = (
         db.query(models.BirthProfile)
