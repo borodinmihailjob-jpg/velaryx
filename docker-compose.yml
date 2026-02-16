@@ -15,6 +15,31 @@ services:
     ports:
       - "6380:6379"
 
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    entrypoint: ["/bin/sh", "-lc"]
+    command: |
+      for i in $(seq 1 60); do
+        if ollama list >/dev/null 2>&1; then
+          break
+        fi
+        echo "Waiting for ollama..."
+        sleep 2
+      done
+      ollama pull "$OLLAMA_MODEL"
+    depends_on:
+      - ollama
+
   api:
     build:
       context: ./backend
@@ -28,6 +53,8 @@ services:
     depends_on:
       - postgres
       - redis
+      - ollama
+      - ollama-pull
 
   bot:
     build:
@@ -54,3 +81,4 @@ services:
 volumes:
   pg_data:
   miniapp_node_modules:
+  ollama_data:

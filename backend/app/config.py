@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
+    local_only_mode: bool = False
     database_url: str = "sqlite:///./astrobot.db"
     redis_url: str = "redis://localhost:6379/0"
 
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     # Astrology engine provider:
     # - "swisseph": local Swiss Ephemeris engine
     # - "astrologyapi": external provider + local fallback
-    astrology_provider: str = "astrologyapi"
+    astrology_provider: str = "swisseph"
     astrologyapi_base_url: str = "https://json.astrologyapi.com/v1"
     astrologyapi_user_id: str | None = None
     astrologyapi_api_key: str | None = None

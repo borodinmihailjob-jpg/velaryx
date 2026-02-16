@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import random
 from functools import lru_cache
 from pathlib import Path
@@ -66,6 +67,8 @@ SUIT_TO_PREFIX = {
     "Swords": "s",
     "Pentacles": "p",
 }
+
+logger = logging.getLogger("astrobot.tarot_engine")
 
 
 @lru_cache(maxsize=1)
@@ -156,7 +159,12 @@ def draw_cards(spread_type: str, seed: str) -> list[dict]:
     rng = random.Random(seed)
     provider_cards: list[dict[str, Any]] | None = None
 
-    if settings.tarot_provider.lower().strip() == "tarotapi_dev":
+    tarot_provider = settings.tarot_provider.lower().strip()
+    if settings.local_only_mode and tarot_provider != "local":
+        logger.info("LOCAL_ONLY_MODE enabled: forcing tarot provider to local deck (was %s)", tarot_provider)
+        tarot_provider = "local"
+
+    if tarot_provider == "tarotapi_dev":
         provider_cards = _draw_from_tarotapi(len(positions))
 
     if provider_cards is None:

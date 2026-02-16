@@ -18,28 +18,41 @@ Telegram bot + Mini App for astrology and tarot.
 
 ## Local Development
 
-### Quick Start (without LLM)
+### Quick Start (local-only, recommended)
 1. Copy env:
 ```bash
 cp .env.example .env
 ```
-2. Start:
+2. Start all services (Postgres + Redis + Ollama + API + bot + miniapp):
 ```bash
 docker compose up --build
 ```
-3. API docs:
+3. Wait until model is pulled (`ollama-pull` service), then open:
 - http://localhost:8000/docs
 
-### With Local LLM (recommended)
+4. Run local smoke check:
+```bash
+./scripts/local_smoke.sh
+```
+Optional:
+- `STRICT_LLM=false ./scripts/local_smoke.sh` (allow fallback during quick checks)
 
-**Option 1: Local Ollama (Docker)**
+Default local-only mode in `.env.example`:
+- `LOCAL_ONLY_MODE=true`
+- `ASTROLOGY_PROVIDER=swisseph`
+- `TAROT_PROVIDER=local`
+- `OLLAMA_BASE_URL=http://ollama:11434`
+- `TRANSLATE_VIA_GOOGLE_FREE=false`
+
+### Alternative: Use host Ollama instead of Docker Ollama
 ```bash
 ollama serve
 ollama pull qwen2.5:7b
-# Use OLLAMA_BASE_URL=http://host.docker.internal:11434
 ```
+Then set in `.env`:
+- `OLLAMA_BASE_URL=http://host.docker.internal:11434`
 
-**Option 2: Ollama through Tailscale Funnel (stable remote access)**
+### Alternative: Ollama through Tailscale Funnel (remote access)
 - ✅ Access your Mac's Ollama from anywhere
 - ✅ Tarot keeps working with local mystical fallback if LLM fails/timeouts
 - ✅ Production-ready setup
@@ -98,6 +111,8 @@ alembic upgrade head
 - Optional external engines:
 - `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`
 - `TAROT_PROVIDER=tarotapi_dev`
+- Local-only toggle:
+- `LOCAL_ONLY_MODE=true` (forces local astro/tarot path and disables outbound Google translate calls)
 - Optional LLM for tarot explanations:
 - Local Ollama (default in `.env.example`):
 - `OLLAMA_MODEL` (default `qwen2.5:7b`)

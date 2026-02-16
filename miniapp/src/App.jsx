@@ -67,6 +67,37 @@ const NATAL_LOADING_HINTS = [
   'Тонкие аспекты уже сплетаются в единый узор...',
   'Ещё немного — послание карты почти готово...'
 ];
+const STORY_SLIDE_DURATION_MS = 7200;
+
+function storyCardMotion(animationType) {
+  const mapping = {
+    glow: {
+      initial: { opacity: 0, scale: 0.96, filter: 'blur(5px)' },
+      animate: { opacity: 1, scale: 1, filter: 'blur(0px)' },
+      exit: { opacity: 0, scale: 1.02, filter: 'blur(5px)' },
+      transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
+    },
+    pulse: {
+      initial: { opacity: 0, y: 18, scale: 0.98 },
+      animate: { opacity: 1, y: 0, scale: 1 },
+      exit: { opacity: 0, y: -12, scale: 0.98 },
+      transition: { duration: 0.28, ease: 'easeOut' }
+    },
+    float: {
+      initial: { opacity: 0, y: 22, rotate: -0.8 },
+      animate: { opacity: 1, y: 0, rotate: 0 },
+      exit: { opacity: 0, y: -14, rotate: 0.8 },
+      transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }
+    },
+    orbit: {
+      initial: { opacity: 0, x: 20, scale: 0.96 },
+      animate: { opacity: 1, x: 0, scale: 1 },
+      exit: { opacity: 0, x: -16, scale: 0.98 },
+      transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
+    }
+  };
+  return mapping[animationType] || mapping.glow;
+}
 
 function toNumber(value) {
   if (typeof value !== 'string') return Number(value);
@@ -778,6 +809,25 @@ function Stories({ onBack }) {
 
   const slides = payload?.slides || [];
   const slide = slides[index];
+  const motionPreset = storyCardMotion(slide?.animation);
+
+  useEffect(() => {
+    if (slides.length <= 1) return undefined;
+    const timer = setTimeout(() => {
+      setIndex((prev) => (prev + 1) % slides.length);
+    }, STORY_SLIDE_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [index, slides.length]);
+
+  const prevSlide = () => {
+    if (!slides.length) return;
+    setIndex((prev) => (prev - 1 + slides.length) % slides.length);
+  };
+
+  const nextSlide = () => {
+    if (!slides.length) return;
+    setIndex((prev) => (prev + 1) % slides.length);
+  };
 
   return (
     <Shell title="Сторис дня" subtitle="Краткий персональный поток на сегодня" onBack={onBack}>
@@ -786,23 +836,66 @@ function Stories({ onBack }) {
 
       {slide && (
         <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
-          <motion.article className="story-card" variants={staggerItem}>
-            <small>{payload.date}</small>
-            <p className="section-title">{slide.title}</p>
-            <p>{slide.body}</p>
-            {slide.badge && <div className="chip-row"><span>{slide.badge}</span></div>}
-          </motion.article>
+          <div className="story-progress-row" aria-hidden="true">
+            {slides.map((_, progressIndex) => (
+              <div className="story-progress-track" key={`story-progress-${progressIndex}`}>
+                {progressIndex < index && <span className="story-progress-fill done" />}
+                {progressIndex === index && (
+                  <span
+                    key={`story-progress-active-${index}`}
+                    className="story-progress-fill active"
+                    style={{ animationDuration: `${STORY_SLIDE_DURATION_MS}ms` }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.article
+              key={`${payload.date}-${index}-${slide.title}`}
+              className={`story-card story-anim-${slide.animation || 'glow'}`}
+              initial={motionPreset.initial}
+              animate={motionPreset.animate}
+              exit={motionPreset.exit}
+              transition={motionPreset.transition}
+            >
+              <small>{payload.date}</small>
+              <p className="section-title">{slide.title}</p>
+              <p>{slide.body}</p>
+              {slide.badge && <div className="chip-row"><span>{slide.badge}</span></div>}
+
+              {(slide.tip || slide.avoid || slide.timing) && (
+                <div className="story-insights">
+                  {slide.tip && (
+                    <div className="story-note story-note-tip">
+                      <strong>Практика</strong>
+                      <p>{slide.tip}</p>
+                    </div>
+                  )}
+                  {slide.avoid && (
+                    <div className="story-note story-note-avoid">
+                      <strong>Осторожно</strong>
+                      <p>{slide.avoid}</p>
+                    </div>
+                  )}
+                  {slide.timing && (
+                    <div className="story-note story-note-timing">
+                      <strong>Окно дня</strong>
+                      <p>{slide.timing}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.article>
+          </AnimatePresence>
 
           <div className="grid-2">
-            <button className="ghost" disabled={index === 0} onClick={() => setIndex((prev) => Math.max(0, prev - 1))}>Назад</button>
-            <button
-              className="cta"
-              disabled={index >= slides.length - 1}
-              onClick={() => setIndex((prev) => Math.min(slides.length - 1, prev + 1))}
-            >
-              Дальше
-            </button>
+            <button className="ghost" onClick={prevSlide}>Назад</button>
+            <button className="cta" onClick={nextSlide}>Дальше</button>
           </div>
+
+          <small className="story-provider">Источник: {payload?.llm_provider || 'local:fallback'}</small>
 
           <button
             className="ghost"

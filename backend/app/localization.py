@@ -98,6 +98,8 @@ def _can_be_translated(text: str) -> bool:
 def _translate_via_google_free(text: str) -> str:
     if not settings.enable_response_localization:
         return text
+    if settings.local_only_mode:
+        return text
 
     if not _can_be_translated(text):
         return text

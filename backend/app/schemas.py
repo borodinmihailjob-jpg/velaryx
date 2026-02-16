@@ -129,11 +129,16 @@ class ForecastStorySlide(BaseModel):
     title: str
     body: str
     badge: str | None = None
+    tip: str | None = None
+    avoid: str | None = None
+    timing: str | None = None
+    animation: str | None = None
 
 
 class ForecastStoriesResponse(BaseModel):
     date: date
     slides: list[ForecastStorySlide]
+    llm_provider: str | None = None
 
 
 class ComboInsightRequest(BaseModel):

@@ -246,6 +246,112 @@ def interpret_combo_insight(
     return _request_llm_text(prompt=prompt, temperature=0.6, max_tokens=500)
 
 
+def _normalize_story_animation(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "shine": "glow",
+        "glow": "glow",
+        "pulse": "pulse",
+        "breathe": "pulse",
+        "float": "float",
+        "drift": "float",
+        "orbit": "orbit",
+        "swirl": "orbit",
+    }
+    return aliases.get(raw, "glow")
+
+
+def _normalize_story_slides(payload: dict[str, Any]) -> list[dict[str, str]]:
+    raw_slides = payload.get("slides")
+    if not isinstance(raw_slides, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    for item in raw_slides[:6]:
+        if not isinstance(item, dict):
+            continue
+
+        title = str(item.get("title") or "").strip()
+        body = str(item.get("body") or "").strip()
+        if not title or not body:
+            continue
+
+        slide: dict[str, str] = {
+            "title": title,
+            "body": body,
+            "animation": _normalize_story_animation(item.get("animation")),
+        }
+
+        for optional_key in ("badge", "tip", "avoid", "timing"):
+            value = item.get(optional_key)
+            if isinstance(value, str) and value.strip():
+                slide[optional_key] = value.strip()
+
+        normalized.append(slide)
+
+    return normalized
+
+
+def interpret_forecast_stories(
+    *,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+    energy_score: int,
+    mood: str,
+    focus: str,
+    natal_summary: str,
+    key_aspects: list[str],
+) -> list[dict[str, str]] | None:
+    prompt = (
+        "Собери персональный сторис-пак на один день в стиле практичного гороскопа.\n"
+        "Нужен только русский язык, без markdown.\n"
+        "Тон: конкретно, применимо в течение дня, без воды.\n"
+        "Не обещай 100% исходов и не используй мистические формулировки.\n\n"
+        "Верни СТРОГО JSON-объект:\n"
+        "{\n"
+        '  "slides": [\n'
+        "    {\n"
+        '      "title": \"...\",\n'
+        '      "body": \"2-3 коротких предложения\",\n'
+        '      "badge": \"короткая метка\",\n'
+        '      "tip": \"практический шаг до конца дня\",\n'
+        '      "avoid": \"чего избегать сегодня\",\n'
+        '      "timing": \"лучшее окно по времени\",\n'
+        '      "animation": \"одно из: glow, pulse, float, orbit\"\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Сделай 4 слайда:\n"
+        "1) Общая энергия и фокус дня.\n"
+        "2) Работа/деньги.\n"
+        "3) Общение/отношения.\n"
+        "4) Самочувствие и восстановление.\n\n"
+        f"Солнце: {sun_sign}\n"
+        f"Луна: {moon_sign}\n"
+        f"Асцендент: {rising_sign}\n"
+        f"Энергия: {energy_score}/100\n"
+        f"Режим дня: {mood}\n"
+        f"Фокус дня: {focus}\n"
+        f"Натальный контекст: {natal_summary or 'Нет данных'}\n"
+        "Ключевые аспекты:\n"
+        f"{chr(10).join(key_aspects[:4]) if key_aspects else 'Нет данных'}"
+    )
+
+    raw = _request_llm_text(prompt=prompt, temperature=0.55, max_tokens=800)
+    if not raw:
+        return None
+
+    payload = _extract_json_dict(raw)
+    if not payload:
+        return None
+
+    slides = _normalize_story_slides(payload)
+    if len(slides) < 3:
+        return None
+    return slides
+
+
 def _extract_json_dict(text: str) -> dict[str, Any] | None:
     if not text:
         return None
@@ -282,16 +388,24 @@ def interpret_natal_sections(
     key_aspects: list[str],
     planetary_profile: list[str],
     house_cusps: list[str],
+    planets_in_houses: list[str],
+    mc_line: str,
+    nodes_line: str,
+    house_rulers: list[str],
+    dispositors: list[str],
+    essential_dignities: list[str],
+    configurations: list[str],
     full_aspects: list[str],
 ) -> dict[str, str] | None:
     prompt = (
-        "Ты опытный астролог. На входе факты натальной карты.\n"
-        "Нужно выдать человекопонятные интерпретации на русском языке.\n"
-        "Не давай дисклеймеров, не упоминай ИИ, не используй markdown.\n"
-        "Пиши тепло, ясно, без воды.\n\n"
-        "Верни СТРОГО JSON-объект с 4 ключами:\n"
-        "key_aspects, planetary_profile, house_cusps, natal_explanation.\n"
+        "Ты опытный практикующий астролог. На входе факты натальной карты.\n"
+        "Нужно выдать понятные и полезные интерпретации на русском языке.\n"
+        "Тон: конкретный, спокойный, прикладной. Без мистификации и без воды.\n"
+        "Не давай дисклеймеров, не упоминай ИИ, не используй markdown.\n\n"
+        "Верни СТРОГО JSON-объект с 10 ключами:\n"
+        "key_aspects, planetary_profile, house_cusps, mc_axis, lunar_nodes, house_rulers, dispositors, essential_dignities, configurations, natal_explanation.\n"
         "Значение каждого ключа — строка из 3-6 предложений.\n"
+        "В каждом блоке добавь хотя бы 1 практический ориентир: что усилить/чего избегать.\n"
         "Без дополнительных ключей и без обрамляющего текста.\n\n"
         f"Солнце: {sun_sign}\n"
         f"Луна: {moon_sign}\n"
@@ -303,6 +417,20 @@ def interpret_natal_sections(
         f"{chr(10).join(planetary_profile) if planetary_profile else 'Нет данных'}\n\n"
         "Куспиды домов:\n"
         f"{chr(10).join(house_cusps) if house_cusps else 'Нет данных'}\n\n"
+        "Планеты в домах:\n"
+        f"{chr(10).join(planets_in_houses) if planets_in_houses else 'Нет данных'}\n\n"
+        "MC:\n"
+        f"{mc_line or 'Нет данных'}\n\n"
+        "Лунные узлы:\n"
+        f"{nodes_line or 'Нет данных'}\n\n"
+        "Управители домов:\n"
+        f"{chr(10).join(house_rulers) if house_rulers else 'Нет данных'}\n\n"
+        "Диспозиторы:\n"
+        f"{chr(10).join(dispositors) if dispositors else 'Нет данных'}\n\n"
+        "Эссенциальные достоинства:\n"
+        f"{chr(10).join(essential_dignities) if essential_dignities else 'Нет данных'}\n\n"
+        "Конфигурации карты:\n"
+        f"{chr(10).join(configurations) if configurations else 'Нет данных'}\n\n"
         "Полная матрица аспектов:\n"
         f"{chr(10).join(full_aspects) if full_aspects else 'Нет данных'}"
     )
@@ -316,7 +444,18 @@ def interpret_natal_sections(
         return None
 
     result: dict[str, str] = {}
-    for key in ("key_aspects", "planetary_profile", "house_cusps", "natal_explanation"):
+    for key in (
+        "key_aspects",
+        "planetary_profile",
+        "house_cusps",
+        "mc_axis",
+        "lunar_nodes",
+        "house_rulers",
+        "dispositors",
+        "essential_dignities",
+        "configurations",
+        "natal_explanation",
+    ):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             result[key] = value.strip()

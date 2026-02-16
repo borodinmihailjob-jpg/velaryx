@@ -580,6 +580,155 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.story-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 85% 15%, rgba(139, 92, 246, 0.18), transparent 48%);
+  z-index: 0;
+}
+
+.story-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.story-anim-glow::after,
+.story-anim-pulse::after,
+.story-anim-float::after,
+.story-anim-orbit::after {
+  content: '';
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  pointer-events: none;
+  right: -24px;
+  top: -26px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.26), transparent 66%);
+}
+
+.story-anim-glow::after {
+  animation: story-glow 3.2s ease-in-out infinite;
+}
+
+.story-anim-pulse::after {
+  animation: story-pulse 2.2s ease-in-out infinite;
+}
+
+.story-anim-float::after {
+  animation: story-float 3s ease-in-out infinite;
+}
+
+.story-anim-orbit::after {
+  animation: story-orbit 6s linear infinite;
+}
+
+@keyframes story-glow {
+  0%, 100% { opacity: 0.35; transform: scale(0.92); }
+  50% { opacity: 0.85; transform: scale(1.1); }
+}
+
+@keyframes story-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.85); }
+  50% { opacity: 0.95; transform: scale(1.16); }
+}
+
+@keyframes story-float {
+  0%, 100% { opacity: 0.5; transform: translateY(0) scale(0.92); }
+  50% { opacity: 0.88; transform: translateY(-8px) scale(1.05); }
+}
+
+@keyframes story-orbit {
+  0% { transform: rotate(0deg) translateX(8px) rotate(0deg); opacity: 0.72; }
+  100% { transform: rotate(360deg) translateX(8px) rotate(-360deg); opacity: 0.72; }
+}
+
+.story-progress-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16px, 1fr));
+  gap: 6px;
+}
+
+.story-progress-track {
+  position: relative;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.story-progress-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  background: linear-gradient(90deg, #818cf8, #a78bfa);
+}
+
+.story-progress-fill.done {
+  transform: scaleX(1);
+}
+
+.story-progress-fill.active {
+  animation-name: story-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes story-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.story-insights {
+  display: grid;
+  gap: 8px;
+}
+
+.story-note {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.story-note strong {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.story-note p {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.story-note-tip {
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.story-note-avoid {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.story-note-timing {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.story-provider {
+  text-align: center;
+  opacity: 0.8;
 }
 
 /* ===== Item Grid (Wishlist, Tarot) ===== */

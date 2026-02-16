@@ -39,8 +39,9 @@ def get_forecast_stories(
         user_id=user.id,
         forecast_date=date.today(),
     )
-    slides = services.build_forecast_story_slides(chart=chart, forecast=forecast)
+    slides, llm_provider = services.build_forecast_story_slides(chart=chart, forecast=forecast)
     return schemas.ForecastStoriesResponse(
         date=forecast.forecast_date,
         slides=[schemas.ForecastStorySlide(**slide) for slide in slides],
+        llm_provider=llm_provider,
     )
