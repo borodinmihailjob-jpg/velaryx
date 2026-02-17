@@ -219,33 +219,6 @@ def interpret_tarot_reading(question: str | None, cards: list[dict[str, Any]]) -
     return _request_llm_text(prompt=prompt, temperature=0.7, max_tokens=1100)
 
 
-def interpret_combo_insight(
-    question: str | None,
-    natal_summary: str,
-    daily_summary: str,
-    cards: list[dict[str, Any]],
-) -> str | None:
-    if not cards:
-        return None
-
-    prompt = (
-        "Сформируй единый краткий совет, объединяющий натальную карту, прогноз дня и карты таро.\n"
-        "Тон: конкретно, практично, без воды.\n"
-        "Структура:\n"
-        "1) Главный фокус дня (1-2 предложения)\n"
-        "2) Что усилить\n"
-        "3) Чего избегать\n"
-        "4) Один конкретный шаг до конца дня\n\n"
-        f"Вопрос: {question or 'Без вопроса'}\n"
-        f"Натальный контекст: {natal_summary}\n"
-        f"Прогноз дня: {daily_summary}\n"
-        "Карты таро:\n"
-        f"{_cards_for_prompt(cards)}"
-    )
-
-    return _request_llm_text(prompt=prompt, temperature=0.6, max_tokens=500)
-
-
 def _normalize_story_animation(value: Any) -> str:
     raw = str(value or "").strip().lower()
     aliases = {

@@ -64,15 +64,3 @@ def test_natal_forecast_tarot_flow(client):
     else:
         assert len(tarot_payload["cards"]) == 3
 
-    combo_resp = client.post(
-        "/v1/insights/astro-tarot",
-        headers={"X-TG-USER-ID": "401"},
-        json={"spread_type": "three_card", "question": "Main decision this week?"},
-    )
-    assert combo_resp.status_code == 404
-
-    report_resp = client.get(
-        "/v1/reports/natal.pdf",
-        headers={"X-TG-USER-ID": "401"},
-    )
-    assert report_resp.status_code == 404

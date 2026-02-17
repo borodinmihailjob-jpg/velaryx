@@ -222,6 +222,8 @@ function Shell({ title, subtitle, children, onBack, className = '' }) {
 
 function Onboarding({ mode = 'create', onComplete, onBack }) {
   const isEditMode = mode === 'edit';
+  // Multi-step state: 0=Welcome, 1=DateTime, 2=Place, 3=Review (skip Welcome in edit mode)
+  const [currentStep, setCurrentStep] = useState(isEditMode ? 1 : 0);
   const [loading, setLoading] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(isEditMode);
   const [error, setError] = useState('');
@@ -406,7 +408,6 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
     && latitude <= 90
     && longitude >= -180
     && longitude <= 180;
-  const canSubmit = form.birth_date && form.birth_place && hasValidCoordinates && form.timezone;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -439,183 +440,497 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
     }
   };
 
-  const title = isEditMode ? 'Данные рождения' : 'Ваша звезда';
+  // Step navigation
+  const totalSteps = isEditMode ? 3 : 4;
+  const progress = ((currentStep + (isEditMode ? 0 : 1)) / totalSteps) * 100;
+
+  const canProceedStep1 = form.birth_date && form.birth_time;
+  const canProceedStep2 = form.birth_place && hasValidCoordinates && form.timezone;
+  const canSubmit = canProceedStep1 && canProceedStep2;
+
+  const nextStep = () => {
+    if (currentStep === 0) setCurrentStep(1);
+    else if (currentStep === 1 && canProceedStep1) setCurrentStep(2);
+    else if (currentStep === 2 && canProceedStep2) setCurrentStep(3);
+  };
+
+  const prevStep = () => {
+    if (currentStep > (isEditMode ? 1 : 0)) {
+      setCurrentStep(currentStep - 1);
+      setError('');
+    }
+  };
+
+  const handleBack = () => {
+    if (isEditMode && currentStep === 1) {
+      onBack();
+    } else {
+      prevStep();
+    }
+  };
+
+  const title = isEditMode ? 'Данные рождения' :
+    currentStep === 0 ? 'Добро пожаловать' :
+    currentStep === 1 ? 'Дата и время' :
+    currentStep === 2 ? 'Место рождения' :
+    'Проверка данных';
+
   const subtitle = isEditMode
     ? 'Проверьте и обновите профиль. Изменения применятся только после сохранения.'
-    : 'Заполните данные рождения для персональной карты';
+    : currentStep === 0 ? 'Начнём ваше звёздное путешествие' :
+      currentStep === 1 ? 'Когда вы появились на свет?' :
+      currentStep === 2 ? 'Где прошёл ваш первый вдох?' :
+      'Всё готово к созданию карты';
+
   const submitTitle = loading
     ? (isEditMode ? 'Сохраняем изменения...' : 'Считаем карту...')
-    : (isEditMode ? 'Сохранить изменения' : 'Сохранить и продолжить');
+    : (isEditMode ? 'Сохранить изменения' : 'Создать мою карту');
 
   return (
-    <Shell title={title} subtitle={subtitle} onBack={isEditMode ? onBack : undefined}>
-      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
-        <motion.article className="onboarding-intro" variants={staggerItem}>
-          <p className="section-title">{isEditMode ? 'Режим редактирования' : 'Первый шаг'}</p>
-          <p>
-            {isEditMode
-              ? 'Если нажмёте «Назад», текущие данные останутся без изменений.'
-              : 'Эти данные нужны для точного расчёта натальной карты и персональных прогнозов.'}
-          </p>
-          <div className="onboarding-points">
-            <span>Дата и время рождения</span>
-            <span>Город или координаты</span>
-            <span>Часовой пояс</span>
-          </div>
-        </motion.article>
+    <Shell
+      title={title}
+      subtitle={subtitle}
+      onBack={currentStep > (isEditMode ? 1 : 0) || isEditMode ? handleBack : undefined}
+    >
+      {/* Progress Bar */}
+      {!isEditMode && (
+        <motion.div
+          style={{
+            height: '4px',
+            background: 'var(--gradient-mystical)',
+            borderRadius: 'var(--radius-full)',
+            transformOrigin: 'left',
+            marginBottom: 'var(--spacing-3)',
+            width: `${progress}%`,
+            transition: 'width 0.4s cubic-bezier(0.4, 0.0, 0.2, 1)'
+          }}
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+        />
+      )}
 
-        {loadingProfile && (
-          <motion.div className="onboarding-message" variants={staggerItem}>
-            Загружаем сохранённые данные...
-          </motion.div>
-        )}
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate" key={currentStep}>
 
-        {profileMessage && !loadingProfile && (
-          <motion.div
-            className={`onboarding-message ${profileMessageType === 'warning' ? 'warning' : 'ok'}`}
-            variants={staggerItem}
-          >
-            {profileMessage}
-          </motion.div>
-        )}
-
-        <motion.div variants={staggerItem}>
-          <label>
-            Дата рождения
-            <Hint text="Укажите точную дату для составления натальной карты" />
-            <input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
-          </label>
-        </motion.div>
-
-        <motion.div variants={staggerItem}>
-          <label>
-            Время рождения
-            <Hint text="Если не знаете точного времени, оставьте 12:00" />
-            <input type="time" value={form.birth_time} onChange={(e) => setForm({ ...form, birth_time: e.target.value })} />
-            <span className="input-hint">Если не знаете точно, оставьте 12:00</span>
-          </label>
-        </motion.div>
-
-        <motion.div variants={staggerItem}>
-          <div className="city-autocomplete" ref={wrapperRef}>
-            <label>
-              Город рождения
-              <Hint text="Начните вводить название и выберите из списка" />
-              <input
-                placeholder="Начните вводить город..."
-                value={form.birth_place}
-                onChange={(e) => handleCityInput(e.target.value)}
-                onFocus={() => { if (citySuggestions.length > 0) setShowSuggestions(true); }}
-                autoComplete="off"
-              />
-            </label>
-
-            <AnimatePresence>
-              {showSuggestions && citySuggestions.length > 0 && (
-                <motion.ul
-                  className="city-dropdown"
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
+        {/* STEP 0: WELCOME HERO (only in create mode) */}
+        {!isEditMode && currentStep === 0 && (
+          <>
+            <motion.article className="onboarding-intro" variants={staggerItem}>
+              <div style={{ textAlign: 'center', padding: 'var(--spacing-3) 0' }}>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+                  style={{ fontSize: '64px', marginBottom: 'var(--spacing-2)' }}
                 >
-                  {citySuggestions.map((city) => (
-                    <li key={`${city.name}-${city.latitude}-${city.longitude}`} onClick={() => selectCity(city)}>
-                      <span className="city-name">{city.name}</span>
-                      <span className="city-tz">{timezoneLabel(city.timezone)}</span>
-                    </li>
-                  ))}
-                </motion.ul>
-              )}
-            </AnimatePresence>
+                  ✨
+                </motion.div>
+                <h2 style={{ marginBottom: 'var(--spacing-2)', fontSize: '28px' }}>
+                  Ваша звёздная карта
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--spacing-3)' }}>
+                  Откройте тайны вашего рождения через призму космоса
+                </p>
+              </div>
+              <div className="onboarding-points">
+                <span>🌙 Натальная карта</span>
+                <span>🔮 Персональные прогнозы</span>
+                <span>💫 Совместимость</span>
+              </div>
+            </motion.article>
+            <motion.button
+              className="cta"
+              onClick={nextStep}
+              variants={staggerItem}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+            >
+              Начать путешествие
+            </motion.button>
+          </>
+        )}
 
-            {citySearchStatus === 'loading' && (
-              <span className="input-hint">Ищем город...</span>
+        {/* STEP 1: BIRTH DATE & TIME */}
+        {currentStep === 1 && (
+          <>
+            {!isEditMode && (
+              <motion.article className="onboarding-intro" variants={staggerItem}>
+                <p className="section-title">Шаг 1 из 3</p>
+                <p>Эти данные нужны для точного расчёта натальной карты и персональных прогнозов.</p>
+              </motion.article>
             )}
-            {citySearchStatus === 'error' && (
-              <span className="input-hint city-warning-hint">Поиск временно недоступен. Можно указать координаты вручную.</span>
-            )}
-            {citySearchStatus === 'not_found' && (
-              <motion.div className="city-status city-status-warning" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <p>Такой город не найден. Продолжайте по координатам.</p>
+
+            {loadingProfile && (
+              <motion.div className="onboarding-message" variants={staggerItem}>
+                Загружаем сохранённые данные...
               </motion.div>
             )}
-            {citySelected && (
-              <span className="input-hint city-success-hint">
-                Координаты и часовой пояс заполнены автоматически
-              </span>
+
+            {profileMessage && !loadingProfile && (
+              <motion.div
+                className={`onboarding-message ${profileMessageType === 'warning' ? 'warning' : 'ok'}`}
+                variants={staggerItem}
+              >
+                {profileMessage}
+              </motion.div>
             )}
-          </div>
-        </motion.div>
 
-        <motion.div variants={staggerItem}>
-          <label>
-            Часовой пояс
-            <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
-              {timezoneOptions.map((tz) => (
-                <option key={tz} value={tz}>{timezoneLabel(tz)}</option>
-              ))}
-            </select>
-            <span className="input-hint">Текущий пояс: {timezoneLabel(form.timezone)}</span>
-          </label>
-        </motion.div>
-
-        {!showManualCoords && !citySelected && form.birth_place && citySearchStatus !== 'not_found' && (
-          <motion.div variants={staggerItem}>
-            <button className="profile-toggle" onClick={() => setShowManualCoords(true)} type="button">
-              Нет моего города? Указать координаты вручную
-            </button>
-          </motion.div>
-        )}
-
-        {(showManualCoords || (!citySelected && form.latitude)) && (
-          <motion.div variants={staggerItem} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-            <p className="input-hint coords-help">
-              Можно ввести координаты вручную, например: 55.7558 и 37.6173. Часовой пояс обновится автоматически.
-            </p>
-            <div className="grid-2">
+            <motion.div variants={staggerItem}>
               <label>
-                Широта
-                <input
-                  placeholder="55.7558"
-                  value={form.latitude}
-                  onChange={(e) => setLatitude(e.target.value)}
-                  inputMode="decimal"
-                />
+                Дата рождения
+                <Hint text="Укажите точную дату для составления натальной карты" />
+                <input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
               </label>
+            </motion.div>
+
+            <motion.div variants={staggerItem}>
               <label>
-                Долгота
-                <input
-                  placeholder="37.6173"
-                  value={form.longitude}
-                  onChange={(e) => setLongitude(e.target.value)}
-                  inputMode="decimal"
-                />
+                Время рождения
+                <Hint text="Если не знаете точного времени, оставьте 12:00" />
+                <input type="time" value={form.birth_time} onChange={(e) => setForm({ ...form, birth_time: e.target.value })} />
+                <span className="input-hint">Если не знаете точно, оставьте 12:00</span>
               </label>
-            </div>
-            {!hasValidCoordinates && form.latitude && form.longitude && (
-              <span className="input-hint city-warning-hint">Проверьте координаты: широта от -90 до 90, долгота от -180 до 180.</span>
+            </motion.div>
+
+            {!isEditMode && (
+              <motion.button
+                className="cta"
+                onClick={nextStep}
+                disabled={!canProceedStep1}
+                variants={staggerItem}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.96 }}
+              >
+                Далее
+              </motion.button>
             )}
-          </motion.div>
+          </>
         )}
 
-        {isEditMode ? (
-          <motion.div variants={staggerItem} className="grid-2 onboarding-actions">
-            <button className="ghost" type="button" onClick={onBack} disabled={loading}>
-              Назад
-            </button>
-            <button className="cta" onClick={submit} disabled={loading || loadingProfile || !canSubmit}>
-              {submitTitle}
-            </button>
-          </motion.div>
-        ) : (
-          <motion.div variants={staggerItem}>
-            <button className="cta" onClick={submit} disabled={loading || loadingProfile || !canSubmit}>
-              {submitTitle}
-            </button>
-          </motion.div>
+        {/* STEP 2: BIRTH PLACE */}
+        {currentStep === 2 && (
+          <>
+            {!isEditMode && (
+              <motion.article className="onboarding-intro" variants={staggerItem}>
+                <p className="section-title">Шаг 2 из 3</p>
+                <p>Место рождения нужно для определения координат и часового пояса.</p>
+              </motion.article>
+            )}
+
+            <motion.div variants={staggerItem}>
+              <div className="city-autocomplete" ref={wrapperRef}>
+                <label>
+                  Город рождения
+                  <Hint text="Начните вводить название и выберите из списка" />
+                  <input
+                    placeholder="Начните вводить город..."
+                    value={form.birth_place}
+                    onChange={(e) => handleCityInput(e.target.value)}
+                    onFocus={() => { if (citySuggestions.length > 0) setShowSuggestions(true); }}
+                    autoComplete="off"
+                  />
+                </label>
+
+                <AnimatePresence>
+                  {showSuggestions && citySuggestions.length > 0 && (
+                    <motion.ul
+                      className="city-dropdown"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {citySuggestions.map((city) => (
+                        <li key={`${city.name}-${city.latitude}-${city.longitude}`} onClick={() => selectCity(city)}>
+                          <span className="city-name">{city.name}</span>
+                          <span className="city-tz">{timezoneLabel(city.timezone)}</span>
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+
+                {citySearchStatus === 'loading' && (
+                  <span className="input-hint">Ищем город...</span>
+                )}
+                {citySearchStatus === 'error' && (
+                  <span className="input-hint city-warning-hint">Поиск временно недоступен. Можно указать координаты вручную.</span>
+                )}
+                {citySearchStatus === 'not_found' && (
+                  <motion.div className="city-status city-status-warning" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                    <p>Такой город не найден. Продолжайте по координатам.</p>
+                  </motion.div>
+                )}
+                {citySelected && (
+                  <span className="input-hint city-success-hint">
+                    Координаты и часовой пояс заполнены автоматически
+                  </span>
+                )}
+              </div>
+            </motion.div>
+
+            <motion.div variants={staggerItem}>
+              <label>
+                Часовой пояс
+                <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
+                  {timezoneOptions.map((tz) => (
+                    <option key={tz} value={tz}>{timezoneLabel(tz)}</option>
+                  ))}
+                </select>
+                <span className="input-hint">Текущий пояс: {timezoneLabel(form.timezone)}</span>
+              </label>
+            </motion.div>
+
+            {!showManualCoords && !citySelected && form.birth_place && citySearchStatus !== 'not_found' && (
+              <motion.div variants={staggerItem}>
+                <button className="profile-toggle" onClick={() => setShowManualCoords(true)} type="button">
+                  Нет моего города? Указать координаты вручную
+                </button>
+              </motion.div>
+            )}
+
+            {(showManualCoords || (!citySelected && form.latitude)) && (
+              <motion.div variants={staggerItem} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                <p className="input-hint coords-help">
+                  Можно ввести координаты вручную, например: 55.7558 и 37.6173. Часовой пояс обновится автоматически.
+                </p>
+                <div className="grid-2">
+                  <label>
+                    Широта
+                    <input
+                      placeholder="55.7558"
+                      value={form.latitude}
+                      onChange={(e) => setLatitude(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label>
+                    Долгота
+                    <input
+                      placeholder="37.6173"
+                      value={form.longitude}
+                      onChange={(e) => setLongitude(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
+                {!hasValidCoordinates && form.latitude && form.longitude && (
+                  <span className="input-hint city-warning-hint">Проверьте координаты: широта от -90 до 90, долгота от -180 до 180.</span>
+                )}
+              </motion.div>
+            )}
+
+            {!isEditMode && (
+              <motion.button
+                className="cta"
+                onClick={nextStep}
+                disabled={!canProceedStep2}
+                variants={staggerItem}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.96 }}
+              >
+                Далее
+              </motion.button>
+            )}
+          </>
         )}
 
+        {/* STEP 3: REVIEW & SUBMIT (only in create mode) */}
+        {!isEditMode && currentStep === 3 && (
+          <>
+            <motion.article className="onboarding-intro" variants={staggerItem}>
+              <p className="section-title">Шаг 3 из 3</p>
+              <p>Проверьте данные перед созданием карты</p>
+            </motion.article>
+
+            <motion.div className="glass-card" variants={staggerItem}>
+              <h3 style={{ marginBottom: 'var(--spacing-2)' }}>Ваши данные</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
+                <div>
+                  <small>Дата и время рождения</small>
+                  <p style={{ color: 'var(--text)', marginTop: '4px' }}>
+                    {form.birth_date} в {form.birth_time}
+                  </p>
+                </div>
+                <div>
+                  <small>Место рождения</small>
+                  <p style={{ color: 'var(--text)', marginTop: '4px' }}>
+                    {form.birth_place}
+                  </p>
+                  <p style={{ fontSize: '13px', marginTop: '4px' }}>
+                    {latitude.toFixed(4)}, {longitude.toFixed(4)}
+                  </p>
+                </div>
+                <div>
+                  <small>Часовой пояс</small>
+                  <p style={{ color: 'var(--text)', marginTop: '4px' }}>
+                    {timezoneLabel(form.timezone)}
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.button
+              className="cta"
+              onClick={submit}
+              disabled={loading || !canSubmit}
+              variants={staggerItem}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+            >
+              {submitTitle}
+            </motion.button>
+          </>
+        )}
+
+        {/* EDIT MODE: ALL FIELDS */}
+        {isEditMode && currentStep === 1 && (
+          <>
+            {loadingProfile && (
+              <motion.div className="onboarding-message" variants={staggerItem}>
+                Загружаем сохранённые данные...
+              </motion.div>
+            )}
+
+            {profileMessage && !loadingProfile && (
+              <motion.div
+                className={`onboarding-message ${profileMessageType === 'warning' ? 'warning' : 'ok'}`}
+                variants={staggerItem}
+              >
+                {profileMessage}
+              </motion.div>
+            )}
+
+            <motion.div variants={staggerItem}>
+              <label>
+                Дата рождения
+                <Hint text="Укажите точную дату для составления натальной карты" />
+                <input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
+              </label>
+            </motion.div>
+
+            <motion.div variants={staggerItem}>
+              <label>
+                Время рождения
+                <Hint text="Если не знаете точного времени, оставьте 12:00" />
+                <input type="time" value={form.birth_time} onChange={(e) => setForm({ ...form, birth_time: e.target.value })} />
+                <span className="input-hint">Если не знаете точно, оставьте 12:00</span>
+              </label>
+            </motion.div>
+
+            <motion.div variants={staggerItem}>
+              <div className="city-autocomplete" ref={wrapperRef}>
+                <label>
+                  Город рождения
+                  <Hint text="Начните вводить название и выберите из списка" />
+                  <input
+                    placeholder="Начните вводить город..."
+                    value={form.birth_place}
+                    onChange={(e) => handleCityInput(e.target.value)}
+                    onFocus={() => { if (citySuggestions.length > 0) setShowSuggestions(true); }}
+                    autoComplete="off"
+                  />
+                </label>
+
+                <AnimatePresence>
+                  {showSuggestions && citySuggestions.length > 0 && (
+                    <motion.ul
+                      className="city-dropdown"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {citySuggestions.map((city) => (
+                        <li key={`${city.name}-${city.latitude}-${city.longitude}`} onClick={() => selectCity(city)}>
+                          <span className="city-name">{city.name}</span>
+                          <span className="city-tz">{timezoneLabel(city.timezone)}</span>
+                        </li>
+                      ))}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+
+                {citySearchStatus === 'loading' && (
+                  <span className="input-hint">Ищем город...</span>
+                )}
+                {citySearchStatus === 'error' && (
+                  <span className="input-hint city-warning-hint">Поиск временно недоступен. Можно указать координаты вручную.</span>
+                )}
+                {citySearchStatus === 'not_found' && (
+                  <motion.div className="city-status city-status-warning" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                    <p>Такой город не найден. Продолжайте по координатам.</p>
+                  </motion.div>
+                )}
+                {citySelected && (
+                  <span className="input-hint city-success-hint">
+                    Координаты и часовой пояс заполнены автоматически
+                  </span>
+                )}
+              </div>
+            </motion.div>
+
+            <motion.div variants={staggerItem}>
+              <label>
+                Часовой пояс
+                <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
+                  {timezoneOptions.map((tz) => (
+                    <option key={tz} value={tz}>{timezoneLabel(tz)}</option>
+                  ))}
+                </select>
+                <span className="input-hint">Текущий пояс: {timezoneLabel(form.timezone)}</span>
+              </label>
+            </motion.div>
+
+            {!showManualCoords && !citySelected && form.birth_place && citySearchStatus !== 'not_found' && (
+              <motion.div variants={staggerItem}>
+                <button className="profile-toggle" onClick={() => setShowManualCoords(true)} type="button">
+                  Нет моего города? Указать координаты вручную
+                </button>
+              </motion.div>
+            )}
+
+            {(showManualCoords || (!citySelected && form.latitude)) && (
+              <motion.div variants={staggerItem} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                <p className="input-hint coords-help">
+                  Можно ввести координаты вручную, например: 55.7558 и 37.6173. Часовой пояс обновится автоматически.
+                </p>
+                <div className="grid-2">
+                  <label>
+                    Широта
+                    <input
+                      placeholder="55.7558"
+                      value={form.latitude}
+                      onChange={(e) => setLatitude(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label>
+                    Долгота
+                    <input
+                      placeholder="37.6173"
+                      value={form.longitude}
+                      onChange={(e) => setLongitude(e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
+                {!hasValidCoordinates && form.latitude && form.longitude && (
+                  <span className="input-hint city-warning-hint">Проверьте координаты: широта от -90 до 90, долгота от -180 до 180.</span>
+                )}
+              </motion.div>
+            )}
+
+            <motion.div variants={staggerItem} className="grid-2 onboarding-actions">
+              <button className="ghost" type="button" onClick={onBack} disabled={loading}>
+                Назад
+              </button>
+              <button className="cta" onClick={submit} disabled={loading || loadingProfile || !canSubmit}>
+                {submitTitle}
+              </button>
+            </motion.div>
+          </>
+        )}
+
+        {/* ERROR MESSAGE */}
         {error && (
           <motion.p className="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {error}
@@ -633,27 +948,136 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onEditBirthData })
     { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями и анимацией', action: onOpenTarot }
   ];
 
+  // Daily energy (simulated for demo - would come from API)
+  const todayEnergy = 78;
+  const todayMood = "прорыв";
+  const todayFocus = "творчество";
+
   return (
     <Shell title="Созвездие" subtitle="Астрология и таро в одном потоке.">
-      <motion.div className="card-grid" variants={staggerContainer} initial="initial" animate="animate">
-        {menuItems.map((item) => (
-          <motion.button
-            key={item.label}
-            className="menu-btn"
-            onClick={item.action}
-            variants={staggerItem}
-            whileTap={{ scale: 0.97 }}
-          >
-            <span className="menu-icon">{item.icon}</span>
-            <span className="menu-text">
-              <span>{item.label}</span>
-              <span className="menu-hint">{item.hint}</span>
-            </span>
-          </motion.button>
-        ))}
-      </motion.div>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
 
-      <button className="profile-toggle" onClick={onEditBirthData}>Изменить данные рождения</button>
+        {/* HERO CARD: Daily Energy */}
+        <motion.div
+          className="glass-card"
+          variants={staggerItem}
+          style={{
+            background: 'var(--glass-light)',
+            borderRadius: 'var(--radius-xl)',
+            padding: 'var(--spacing-3)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+        >
+          {/* Gradient overlay */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '200px',
+            height: '200px',
+            background: 'radial-gradient(circle at center, rgba(94, 92, 230, 0.2), transparent 70%)',
+            pointerEvents: 'none'
+          }} />
+
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-3)' }}>
+              <div>
+                <h2 style={{ fontSize: '22px', marginBottom: 'var(--spacing-1)' }}>
+                  Сегодня
+                </h2>
+                <p style={{ fontSize: '15px', color: 'var(--text-secondary)' }}>
+                  {new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </p>
+              </div>
+
+              {/* Energy circle */}
+              <div style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                border: '3px solid var(--glass-medium)',
+                background: 'var(--glass-light)',
+                backdropFilter: 'var(--blur-strong)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative'
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  inset: '-3px',
+                  borderRadius: '50%',
+                  background: `conic-gradient(var(--accent-vibrant) 0% ${todayEnergy}%, transparent ${todayEnergy}% 100%)`,
+                  mask: 'radial-gradient(circle, transparent 32px, black 33px, black 36px, transparent 37px)',
+                  WebkitMask: 'radial-gradient(circle, transparent 32px, black 33px, black 36px, transparent 37px)'
+                }} />
+                <span style={{
+                  fontSize: '20px',
+                  fontWeight: '700',
+                  background: 'var(--gradient-mystical)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}>
+                  {todayEnergy}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
+                  energy
+                </span>
+              </div>
+            </div>
+
+            {/* Insights */}
+            <div style={{ display: 'flex', gap: 'var(--spacing-1)', flexWrap: 'wrap' }}>
+              <span style={{
+                background: 'var(--accent-glow)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--radius-full)',
+                padding: 'var(--spacing-1) var(--spacing-2)',
+                fontSize: '13px',
+                fontWeight: '600',
+                backdropFilter: 'var(--blur-light)'
+              }}>
+                💫 {todayMood}
+              </span>
+              <span style={{
+                background: 'rgba(191, 90, 242, 0.15)',
+                border: '1px solid var(--accent-vibrant)',
+                borderRadius: 'var(--radius-full)',
+                padding: 'var(--spacing-1) var(--spacing-2)',
+                fontSize: '13px',
+                fontWeight: '600',
+                backdropFilter: 'var(--blur-light)'
+              }}>
+                ✨ {todayFocus}
+              </span>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* MENU ITEMS */}
+        <div className="card-grid">
+          {menuItems.map((item) => (
+            <motion.button
+              key={item.label}
+              className="menu-btn"
+              onClick={item.action}
+              variants={staggerItem}
+              whileTap={{ scale: 0.97 }}
+            >
+              <span className="menu-icon">{item.icon}</span>
+              <span className="menu-text">
+                <span>{item.label}</span>
+                <span className="menu-hint">{item.hint}</span>
+              </span>
+            </motion.button>
+          ))}
+        </div>
+
+        <button className="profile-toggle" onClick={onEditBirthData}>Изменить данные рождения</button>
+      </motion.div>
     </Shell>
   );
 }

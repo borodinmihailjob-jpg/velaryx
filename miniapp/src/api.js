@@ -96,21 +96,3 @@ export async function apiRequest(path, options = {}) {
 
   return response.json();
 }
-
-export async function apiBinaryRequest(path, options = {}) {
-  const headers = buildHeaders(options);
-  if (headers['Content-Type']) {
-    delete headers['Content-Type'];
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers
-  });
-
-  if (!response.ok) {
-    await throwResponseError(response);
-  }
-
-  return response.blob();
-}

@@ -23,6 +23,7 @@ from .database import Base
 INT64 = BigInteger().with_variant(Integer, "sqlite")
 
 
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -76,88 +77,6 @@ class DailyForecast(Base):
     energy_score: Mapped[int] = mapped_column(Integer, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-
-
-class CompatInvite(Base):
-    __tablename__ = "compat_invites"
-
-    token: Mapped[str] = mapped_column(Text, primary_key=True)
-    inviter_user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    max_uses: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    use_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-
-    inviter: Mapped[User] = relationship("User")
-
-
-class CompatSession(Base):
-    __tablename__ = "compat_sessions"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    inviter_user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False)
-    invitee_user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False)
-    invite_token: Mapped[str] = mapped_column(Text, ForeignKey("compat_invites.token"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-
-
-class CompatResult(Base):
-    __tablename__ = "compat_results"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("compat_sessions.id"), nullable=False)
-    score: Mapped[int] = mapped_column(Integer, nullable=False)
-    summary: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-
-
-class Wishlist(Base):
-    __tablename__ = "wishlists"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    public_token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    cover_url: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-
-    items: Mapped[list["WishlistItem"]] = relationship(
-        "WishlistItem", back_populates="wishlist", cascade="all, delete-orphan"
-    )
-
-
-class WishlistItem(Base):
-    __tablename__ = "wishlist_items"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    wishlist_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wishlists.id"), nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    image_url: Mapped[str | None] = mapped_column(Text)
-    budget_cents: Mapped[int | None] = mapped_column(Integer)
-
-    wishlist: Mapped[Wishlist] = relationship("Wishlist", back_populates="items")
-    reservations: Mapped[list["ItemReservation"]] = relationship(
-        "ItemReservation", back_populates="item", cascade="all, delete-orphan"
-    )
-
-
-class ItemReservation(Base):
-    __tablename__ = "item_reservations"
-    __table_args__ = (
-        UniqueConstraint("item_id", "active", name="uq_item_active_reservation"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wishlist_items.id"), nullable=False)
-    reserver_tg_user_id: Mapped[int | None] = mapped_column(INT64)
-    reserver_name: Mapped[str | None] = mapped_column(Text)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-
-    item: Mapped[WishlistItem] = relationship("WishlistItem", back_populates="reservations")
 
 
 class TarotSession(Base):
