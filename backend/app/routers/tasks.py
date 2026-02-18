@@ -2,8 +2,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
-from arq import ArqRedis
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..dependencies import current_user_dep
 from .. import models, schemas
@@ -12,21 +11,13 @@ router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
 logger = logging.getLogger("astrobot.tasks")
 
 
-async def get_arq_pool(request) -> ArqRedis:  # type: ignore[name-defined]
-    pool = getattr(request.app.state, "arq_pool", None)
-    if pool is None:
-        raise HTTPException(status_code=503, detail="Task queue unavailable")
-    return pool
-
-
 @router.get("/{task_id}", response_model=schemas.TaskStatusResponse)
 async def get_task_status(
     task_id: str,
-    request=None,
+    request: Request,
     user: models.User = Depends(current_user_dep),
 ):
     """Poll the status of a background LLM task."""
-    from fastapi import Request
     # task_id is validated as a non-empty string already via path
     if not task_id or len(task_id) > 128:
         raise HTTPException(status_code=400, detail="Invalid task_id")
