@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any
 
-from arq import RedisSettings
+from arq.connections import RedisSettings
 
 from .config import settings
 from .llm_engine import (

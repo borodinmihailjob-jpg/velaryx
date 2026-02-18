@@ -1,14 +1,14 @@
 """Add indexes on FK columns for query performance.
 
 Revision ID: 0003_add_fk_indexes
-Revises: 0002_drop_unused_tables
+Revises: 0002_drop_unused
 Create Date: 2026-02-18
 """
 
 from alembic import op
 
 revision = "0003_add_fk_indexes"
-down_revision = "0002_drop_unused_tables"
+down_revision = "0002_drop_unused"
 branch_labels = None
 depends_on = None
 
