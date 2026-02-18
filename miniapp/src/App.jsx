@@ -568,8 +568,8 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
           </>
         )}
 
-        {/* STEP 1: BIRTH DATE & TIME */}
-        {currentStep === 1 && (
+        {/* STEP 1: BIRTH DATE & TIME (create mode only; edit mode has its own combined block) */}
+        {!isEditMode && currentStep === 1 && (
           <>
             {!isEditMode && (
               <motion.article className="onboarding-intro" variants={staggerItem}>
@@ -625,8 +625,8 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
           </>
         )}
 
-        {/* STEP 2: BIRTH PLACE */}
-        {currentStep === 2 && (
+        {/* STEP 2: BIRTH PLACE (create mode only) */}
+        {!isEditMode && currentStep === 2 && (
           <>
             {!isEditMode && (
               <motion.article className="onboarding-intro" variants={staggerItem}>
