@@ -11,7 +11,9 @@ _tf = TimezoneFinder()
 
 # Generated dataset (all Russian cities from ru-cities):
 # https://github.com/epogrebnyak/ru-cities/blob/main/assets/towns.csv
-_CITIES_PATH = Path(__file__).resolve().parent.parent / "assets" / "russian_cities_all.json"
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+_CITIES_PATH = _ASSETS_DIR / "russian_cities_all.json"
+_WORLD_CITIES_PATH = _ASSETS_DIR / "world_cities.json"
 _FALLBACK_CITIES: list[dict] = [
     {"name": "Москва", "lat": 55.7558, "lon": 37.6173},
     {"name": "Санкт-Петербург", "lat": 59.9343, "lon": 30.3351},
@@ -37,14 +39,14 @@ def _normalize_text(value: str) -> str:
     return value.lower().replace("ё", "е").strip()
 
 
-def _load_cities() -> list[dict]:
+def _load_json_cities(path: Path) -> list[dict]:
     try:
-        payload = json.loads(_CITIES_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return _FALLBACK_CITIES
+        return []
 
     if not isinstance(payload, list):
-        return _FALLBACK_CITIES
+        return []
 
     cleaned: list[dict] = []
     for item in payload:
@@ -59,9 +61,17 @@ def _load_cities() -> list[dict]:
         except Exception:
             continue
         timezone = str(item.get("timezone") or "").strip() or None
-        cleaned.append({"name": name, "lat": lat, "lon": lon, "timezone": timezone})
+        name_ru = str(item.get("name_ru") or "").strip() or None
+        cleaned.append({"name": name, "lat": lat, "lon": lon, "timezone": timezone, "name_ru": name_ru})
 
-    return cleaned or _FALLBACK_CITIES
+    return cleaned
+
+
+def _load_cities() -> list[dict]:
+    russian = _load_json_cities(_CITIES_PATH)
+    world = _load_json_cities(_WORLD_CITIES_PATH)
+    combined = russian + world
+    return combined or _FALLBACK_CITIES
 
 
 CITIES: list[dict] = _load_cities()
@@ -98,14 +108,19 @@ def search_cities(q: str = Query(min_length=1, max_length=100)):
     results: list[CityResult] = []
 
     for city in CITIES:
-        if query in _normalize_text(city["name"]):
+        name_match = query in _normalize_text(city["name"])
+        ru_match = city.get("name_ru") and query in _normalize_text(city["name_ru"])
+        if name_match or ru_match:
             tz = city.get("timezone")
             if not tz:
                 tz = _tf.timezone_at(lat=city["lat"], lng=city["lon"]) or "UTC"
                 tz = _normalize_timezone(tz, city["lat"], city["lon"])
+            display_name = city["name"]
+            if city.get("name_ru"):
+                display_name = f"{city['name_ru']} ({city['name']})"
             results.append(
                 CityResult(
-                    name=city["name"],
+                    name=display_name,
                     latitude=city["lat"],
                     longitude=city["lon"],
                     timezone=tz,
