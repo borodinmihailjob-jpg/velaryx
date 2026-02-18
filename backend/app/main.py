@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    force=True,
 )
 logger = logging.getLogger("astrobot.api")
 

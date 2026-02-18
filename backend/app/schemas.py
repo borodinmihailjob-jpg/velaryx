@@ -23,6 +23,16 @@ class BirthProfileResponse(BaseModel):
     timezone: str
 
 
+class ProfileDeleteResponse(BaseModel):
+    ok: bool = True
+    deleted_user: bool
+    deleted_birth_profiles: int
+    deleted_natal_charts: int
+    deleted_daily_forecasts: int
+    deleted_tarot_sessions: int
+    deleted_tarot_cards: int
+
+
 class NatalCalculateRequest(BaseModel):
     profile_id: UUID
 

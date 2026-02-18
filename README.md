@@ -6,7 +6,7 @@ Telegram bot + Mini App for astrology and tarot.
 - `backend`: FastAPI + SQLAlchemy + Alembic + PostgreSQL + Redis
 - `bot`: aiogram worker
 - `miniapp`: React + Vite + Telegram Mini Apps SDK + Framer Motion
-- Deploy target: Render (`render.yaml` included)
+- Production runtime: Docker Compose + Tailscale Funnel
 
 ## Implemented Features
 - Natal profile + full natal map (`/v1/natal/*`)
@@ -15,6 +15,10 @@ Telegram bot + Mini App for astrology and tarot.
 - AI interpretation for tarot (local Ollama; on failure returns mystical fallback text)
 - Telegram Mini App `startapp` routing (`sc_*`)
 - Telegram `initData` signature validation on backend
+
+## Runtime Notes
+- LLM runtime supports **only Ollama** (`LLM_PROVIDER=ollama`).
+- If Ollama is unavailable, tarot returns local fallback text (`local:fallback`).
 
 ## Local Development
 
@@ -44,6 +48,9 @@ Default local-only mode in `.env.example`:
 - `OLLAMA_BASE_URL=http://ollama:11434`
 - `TRANSLATE_VIA_GOOGLE_FREE=false`
 
+Node version for miniapp build:
+- `>=20` (see `miniapp/package.json`)
+
 ### Alternative: Use host Ollama instead of Docker Ollama
 ```bash
 ollama serve
@@ -52,35 +59,43 @@ ollama pull qwen2.5:7b
 Then set in `.env`:
 - `OLLAMA_BASE_URL=http://host.docker.internal:11434`
 
-### Alternative: Ollama through Tailscale Funnel (remote access)
-- ✅ Access your Mac's Ollama from anywhere
-- ✅ Tarot keeps working with local mystical fallback if LLM fails/timeouts
-- ✅ Production-ready setup
+## Production (Own Machine + Docker + Tailscale)
 
-See **[TAILSCALE_SETUP.md](TAILSCALE_SETUP.md)** for complete guide.
+Use `docker-compose.prod.yml` to run production profile:
+- `miniapp` is built as static assets and served by nginx.
+- nginx in `miniapp` proxies `/api/*` to backend.
+- Only one external port is exposed: `8080`.
+- `postgres`/`redis`/`api` remain internal (no published ports).
 
-Quick setup:
+1. Configure `.env.prod` (required keys):
+- `BOT_TOKEN`
+- `BOT_USERNAME`
+- `INTERNAL_API_KEY`
+- `MINI_APP_PUBLIC_BASE_URL=https://<your-funnel-domain>/`
+- `CORS_ORIGINS_RAW=https://<your-funnel-domain>`
+- `REQUIRE_TELEGRAM_INIT_DATA=true`
+- `ALLOW_INSECURE_DEV_AUTH=false`
+- `LLM_PROVIDER=ollama`
+- `OLLAMA_BASE_URL`:
+  - `http://ollama:11434` if running `ollama` service in compose (`--profile ollama`)
+  - `http://host.docker.internal:11434` if using host Ollama
+- `VITE_BOT_USERNAME=<your_bot_username>`
+
+2. Build and run production profile:
 ```bash
-# 1. Setup Ollama proxy on Mac
-cd ollama-proxy
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+docker compose -f docker-compose.prod.yml --env-file .env.prod up --build -d
 
-# 2. Install Tailscale and enable Funnel
-brew install tailscale
-sudo tailscale up
-tailscale funnel 8888
+# Optional: start bundled Ollama service
+docker compose -f docker-compose.prod.yml --env-file .env.prod --profile ollama up -d
 
-# 3. Update .env with your Tailscale URL
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=https://your-macbook.tail1234.ts.net
+# Verify
+curl http://localhost:8080/
+curl http://localhost:8080/api/health
 ```
 
-Full documentation:
-- [TAILSCALE_SETUP.md](TAILSCALE_SETUP.md) - Step-by-step setup guide
-- [ollama-proxy/README.md](ollama-proxy/README.md) - Proxy configuration
-- [ollama-proxy/COMMANDS.md](ollama-proxy/COMMANDS.md) - Command reference
+3. Publish via Tailscale Funnel (already configured in your setup):
+- Example public URL: `https://macbook-pro.tailba5f18.ts.net/`
+- Route funnel traffic to local `:8080`.
 
 ## Database Migrations
 - Local manual run:
@@ -88,41 +103,6 @@ Full documentation:
 cd backend
 alembic upgrade head
 ```
-- Render uses `preDeployCommand: alembic upgrade head` in `render.yaml`.
-
-## Render Deployment
-1. In Render dashboard choose **Blueprint** and connect this repo.
-2. Render will create services from `render.yaml`:
-- `astrobot-postgres` (managed Postgres)
-- `astrobot-redis` (key-value)
-- `astrobot-api` (FastAPI web)
-- `astrobot-bot` (aiogram worker)
-- `astrobot-miniapp` (static web)
-3. Set required secret env vars in Render:
-- `BOT_TOKEN`
-- `BOT_USERNAME`
-- `INTERNAL_API_KEY` (same value for `astrobot-api` and `astrobot-bot`)
-- `MINI_APP_PUBLIC_BASE_URL`
-- `CORS_ORIGINS_RAW` (include miniapp public URL)
-- `VITE_API_BASE_URL` (public URL of `astrobot-api`)
-- `VITE_ALLOW_DEV_AUTH=false` (production miniapp should use Telegram initData only)
-- `VITE_TAROT_LOADING_GIF` (default is bundled `/tarot-loader.gif`, can be overridden with another URL/path)
-- `VITE_BOT_USERNAME`
-- Optional external engines:
-- `ASTROLOGY_PROVIDER=astrologyapi` + `ASTROLOGYAPI_USER_ID` + `ASTROLOGYAPI_API_KEY`
-- `TAROT_PROVIDER=tarotapi_dev`
-- Local-only toggle:
-- `LOCAL_ONLY_MODE=true` (forces local astro/tarot path and disables outbound Google translate calls)
-- Optional LLM for tarot explanations:
-- Local Ollama (default in `.env.example`):
-- `OLLAMA_MODEL` (default `qwen2.5:7b`)
-- `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`)
-- If backend runs outside Docker, use `OLLAMA_BASE_URL=http://localhost:11434`
-- `OLLAMA_TIMEOUT_SECONDS`
-- `LLM_PROVIDER=ollama`
-4. Keep production security flags:
-- `REQUIRE_TELEGRAM_INIT_DATA=true`
-- `ALLOW_INSECURE_DEV_AUTH=false`
 
 ## Telegram Setup Checklist
 1. Create bot via `@BotFather`, get token.

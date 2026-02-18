@@ -1477,6 +1477,17 @@ code {
   background: var(--bg-card);
 }
 
+.profile-toggle.danger {
+  color: #ffb5b5;
+  border-color: rgba(255, 92, 92, 0.5);
+}
+
+.profile-toggle.danger:hover {
+  color: #ffd9d9;
+  border-color: rgba(255, 92, 92, 0.9);
+  background: rgba(255, 92, 92, 0.12);
+}
+
 /* ===== Section Title ===== */
 
 .section-title {

@@ -48,6 +48,28 @@ def create_profile(
     )
 
 
+@router.delete("/profile", response_model=schemas.ProfileDeleteResponse)
+def delete_profile(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user_dep),
+):
+    tg_user_id = user.tg_user_id
+    stats = services.delete_user_profile_data(db=db, user_id=user.id)
+    logger.info(
+        "Полный сброс профиля пользователя | user_tg_id=%s | removed=%s",
+        tg_user_id,
+        stats,
+    )
+    return schemas.ProfileDeleteResponse(
+        deleted_user=bool(stats["deleted_user"]),
+        deleted_birth_profiles=int(stats["deleted_birth_profiles"]),
+        deleted_natal_charts=int(stats["deleted_natal_charts"]),
+        deleted_daily_forecasts=int(stats["deleted_daily_forecasts"]),
+        deleted_tarot_sessions=int(stats["deleted_tarot_sessions"]),
+        deleted_tarot_cards=int(stats["deleted_tarot_cards"]),
+    )
+
+
 @router.get("/profile/latest", response_model=schemas.BirthProfileResponse)
 def get_latest_profile(
     db: Session = Depends(get_db),

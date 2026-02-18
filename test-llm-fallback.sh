@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Скрипт для тестирования LLM fallback механизма
+# Скрипт для тестирования LLM (ollama + local fallback)
 #
 # Использование:
 #   chmod +x test-llm-fallback.sh
@@ -12,7 +12,7 @@ API_URL="${API_URL:-http://localhost:8000}"
 TG_USER_ID="${TG_USER_ID:-123456}"
 
 echo "════════════════════════════════════════════════"
-echo "🧪 Тестирование LLM Fallback Механизма"
+echo "🧪 Тестирование LLM механизма (ollama + local fallback)"
 echo "════════════════════════════════════════════════"
 echo ""
 echo "API URL: $API_URL"
@@ -105,12 +105,10 @@ if echo "$TAROT_RESPONSE" | grep -q '"session_id"'; then
         # Разбор провайдера
         if echo "$LLM_PROVIDER" | grep -q "ollama"; then
             echo "   ✅ Используется локальная Ollama"
-        elif echo "$LLM_PROVIDER" | grep -q "openrouter"; then
-            echo "   ⚠️  Fallback на OpenRouter"
-        elif echo "$LLM_PROVIDER" | grep -q "gemini"; then
-            echo "   ⚠️  Fallback на Gemini"
+        elif echo "$LLM_PROVIDER" | grep -q "local:fallback"; then
+            echo "   ⚠️  Использован локальный fallback (без LLM)"
         else
-            echo "   ℹ️  Локальный fallback (без LLM)"
+            echo "   ⚠️  Неизвестный провайдер: $LLM_PROVIDER"
         fi
     fi
 
@@ -163,7 +161,7 @@ echo "✅ Тестирование завершено"
 echo "════════════════════════════════════════════════"
 echo ""
 echo "Рекомендации:"
-echo "  1. Проверьте что используется основной провайдер (ollama)"
-echo "  2. Для теста fallback - остановите Ollama и запустите снова"
+echo "  1. Проверьте, что основной провайдер - ollama"
+echo "  2. Для теста fallback остановите Ollama и повторите запрос"
 echo "  3. Мониторьте логи: docker compose logs -f api | grep LLM"
 echo ""

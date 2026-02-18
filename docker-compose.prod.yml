@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+    cpus: 0.50
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1000 --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    cpus: 0.30
+    networks:
+      - backend
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: ["ollama"]
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    mem_limit: 8g
+    cpus: 4.00
+    networks:
+      - backend
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - .env.prod
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://127.0.0.1:8000/health\", timeout=3).getcode()==200 else 1)'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 1g
+    cpus: 1.50
+    networks:
+      - backend
+
+  bot:
+    build:
+      context: ./bot
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 0.70
+    networks:
+      - backend
+
+  miniapp:
+    build:
+      context: ./miniapp
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_ALLOW_DEV_AUTH: "false"
+        VITE_TAROT_LOADING_GIF: ${VITE_TAROT_LOADING_GIF:-/tarot-loader.gif}
+        VITE_BOT_USERNAME: ${VITE_BOT_USERNAME:-replace_me_bot}
+        VITE_APP_NAME: ${VITE_APP_NAME:-app}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    cpus: 0.50
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+
+networks:
+  backend:

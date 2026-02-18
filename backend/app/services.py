@@ -13,6 +13,7 @@ from . import models
 from .config import settings
 from .astro_engine import calculate_natal_chart
 from .llm_engine import (
+    fallback_tarot_interpretation,
     interpret_forecast_stories,
     interpret_natal_sections,
     interpret_tarot_reading,
@@ -501,6 +502,21 @@ def _set_cached_natal_llm_sections(user_id: int, fingerprint: str, llm_sections:
         logger.warning("Redis write failed for natal LLM cache key=%s: %s", key, str(exc))
 
 
+def _purge_user_natal_cache(user_id: int) -> None:
+    client = _get_redis_client()
+    if client is None:
+        return
+
+    pattern = f"{NATAL_LLM_CACHE_PREFIX}:{user_id}:*"
+    try:
+        keys = list(client.scan_iter(match=pattern, count=200))
+        if keys:
+            client.delete(*keys)
+            logger.info("Natal LLM cache purge | user_id=%s | removed=%s", user_id, len(keys))
+    except Exception as exc:
+        logger.warning("Redis purge failed for natal LLM cache user_id=%s: %s", user_id, str(exc))
+
+
 def _build_natal_sections(
     *,
     material: dict[str, list[str] | str],
@@ -748,6 +764,67 @@ def get_full_natal_chart(db: Session, user_id: int) -> tuple[models.NatalChart, 
     if isinstance(candidate, str) and candidate.strip():
         wheel_chart_url = candidate.strip()
     return chart, sections, wheel_chart_url
+
+
+def delete_user_profile_data(db: Session, user_id: int) -> dict[str, int | bool]:
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        tarot_session_ids = [row[0] for row in db.query(models.TarotSession.id).filter(models.TarotSession.user_id == user_id).all()]
+        deleted_tarot_cards = 0
+        if tarot_session_ids:
+            deleted_tarot_cards = (
+                db.query(models.TarotCard)
+                .filter(models.TarotCard.session_id.in_(tarot_session_ids))
+                .delete(synchronize_session=False)
+            )
+
+        deleted_tarot_sessions = (
+            db.query(models.TarotSession)
+            .filter(models.TarotSession.user_id == user_id)
+            .delete(synchronize_session=False)
+        )
+
+        profile_ids = [row[0] for row in db.query(models.BirthProfile.id).filter(models.BirthProfile.user_id == user_id).all()]
+        deleted_natal_charts = 0
+        if profile_ids:
+            deleted_natal_charts = (
+                db.query(models.NatalChart)
+                .filter(models.NatalChart.profile_id.in_(profile_ids))
+                .delete(synchronize_session=False)
+            )
+
+        deleted_birth_profiles = (
+            db.query(models.BirthProfile)
+            .filter(models.BirthProfile.user_id == user_id)
+            .delete(synchronize_session=False)
+        )
+
+        deleted_daily_forecasts = (
+            db.query(models.DailyForecast)
+            .filter(models.DailyForecast.user_id == user_id)
+            .delete(synchronize_session=False)
+        )
+
+        deleted_users = db.query(models.User).filter(models.User.id == user_id).delete(synchronize_session=False)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    _purge_user_natal_cache(user_id=user_id)
+
+    return {
+        "deleted_user": bool(deleted_users),
+        "deleted_birth_profiles": int(deleted_birth_profiles or 0),
+        "deleted_natal_charts": int(deleted_natal_charts or 0),
+        "deleted_daily_forecasts": int(deleted_daily_forecasts or 0),
+        "deleted_tarot_sessions": int(deleted_tarot_sessions or 0),
+        "deleted_tarot_cards": int(deleted_tarot_cards or 0),
+    }
 
 
 def _build_daily_summary(sun_sign: str, moon_sign: str, rising_sign: str, day_seed: int) -> tuple[int, str, dict]:
@@ -1040,9 +1117,11 @@ def build_tarot_cards_payload(cards: list[models.TarotCard]) -> list[dict]:
 
 
 def build_tarot_ai_interpretation(question: str | None, cards_payload: list[dict]) -> tuple[str | None, str | None]:
+    if not (question and question.strip()):
+        # Fast path for empty question: avoid long LLM generation on CPU-bound hosts.
+        return fallback_tarot_interpretation(question=question, cards=cards_payload), "local:fast"
+
     text = interpret_tarot_reading(question=question, cards=cards_payload)
     if text:
         return text, llm_provider_label()
     return TAROT_HIDDEN_MESSAGE, "local:fallback"
-
-

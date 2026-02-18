@@ -186,6 +186,18 @@ function startParamToView(startParam) {
   return mapping[startParam] || null;
 }
 
+function isMissingProfileError(error) {
+  const status = Number(error?.status);
+  if (status === 404) return true;
+
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    message.includes('not found')
+    || message.includes('не найден')
+    || message.includes('не найдена')
+  );
+}
+
 function Hint({ text }) {
   const [show, setShow] = useState(false);
   return (
@@ -941,7 +953,14 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
   );
 }
 
-function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onEditBirthData }) {
+function Dashboard({
+  onOpenNatal,
+  onOpenStories,
+  onOpenTarot,
+  onEditBirthData,
+  onDeleteProfile,
+  deletingProfile
+}) {
   const menuItems = [
     { icon: '✨', label: 'Натальная карта', hint: 'Полный персональный разбор', action: onOpenNatal },
     { icon: '🌙', label: 'Сторис дня', hint: 'Короткие персональные инсайты', action: onOpenStories },
@@ -1077,12 +1096,15 @@ function Dashboard({ onOpenNatal, onOpenStories, onOpenTarot, onEditBirthData })
         </div>
 
         <button className="profile-toggle" onClick={onEditBirthData}>Изменить данные рождения</button>
+        <button className="profile-toggle danger" onClick={onDeleteProfile} disabled={deletingProfile}>
+          {deletingProfile ? 'Удаляем профиль...' : 'Удалить профиль'}
+        </button>
       </motion.div>
     </Shell>
   );
 }
 
-function NatalChart({ onBack }) {
+function NatalChart({ onBack, onMissingProfile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [chart, setChart] = useState(null);
@@ -1111,6 +1133,11 @@ function NatalChart({ onBack }) {
         }
         const rawMessage = String(e?.message || e || '');
         const lowered = rawMessage.toLowerCase();
+        if (isMissingProfileError(e)) {
+          onMissingProfile?.();
+          setLoading(false);
+          return;
+        }
         setError(
           lowered.includes('load failed')
             ? 'Не удалось загрузить натальную карту. Проверьте соединение и попробуйте снова.'
@@ -1119,7 +1146,7 @@ function NatalChart({ onBack }) {
       }
     }
     setLoading(false);
-  }, []);
+  }, [onMissingProfile]);
 
   useEffect(() => {
     loadChart();
@@ -1215,7 +1242,7 @@ function NatalChart({ onBack }) {
   );
 }
 
-function Stories({ onBack }) {
+function Stories({ onBack, onMissingProfile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [payload, setPayload] = useState(null);
@@ -1227,9 +1254,15 @@ function Stories({ onBack }) {
         setPayload(data);
         setIndex(0);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => {
+        if (isMissingProfileError(e)) {
+          onMissingProfile?.();
+          return;
+        }
+        setError(e.message);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [onMissingProfile]);
 
   const slides = payload?.slides || [];
   const slide = slides[index];
@@ -1470,9 +1503,16 @@ export default function App() {
   const startParam = useStartParam();
   const [view, setView] = useState('dashboard');
   const lastTrackedViewRef = useRef('');
+  const [deletingProfile, setDeletingProfile] = useState(false);
 
   const onboardingDone = useMemo(() => localStorage.getItem('onboarding_complete') === '1', []);
   const [hasOnboarding, setHasOnboarding] = useState(onboardingDone);
+
+  const resetToOnboarding = useCallback(() => {
+    localStorage.removeItem('onboarding_complete');
+    setHasOnboarding(false);
+    setView('onboarding');
+  }, []);
 
   useEffect(() => {
     const mapped = startParamToView(startParam);
@@ -1499,6 +1539,38 @@ export default function App() {
     });
   }, [view]);
 
+  useEffect(() => {
+    if (!hasOnboarding) return undefined;
+    let active = true;
+    apiRequest('/v1/natal/profile/latest')
+      .catch((e) => {
+        if (!active) return;
+        if (isMissingProfileError(e)) {
+          resetToOnboarding();
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [hasOnboarding, resetToOnboarding]);
+
+  const deleteProfile = useCallback(async () => {
+    if (deletingProfile) return;
+    const confirmed = window.confirm('Удалить профиль и всю историю? Это действие нельзя отменить.');
+    if (!confirmed) return;
+
+    setDeletingProfile(true);
+    try {
+      await apiRequest('/v1/natal/profile', { method: 'DELETE' });
+      resetToOnboarding();
+    } catch (e) {
+      window.alert(String(e?.message || e || 'Не удалось удалить профиль.'));
+    } finally {
+      setDeletingProfile(false);
+    }
+  }, [deletingProfile, resetToOnboarding]);
+
   if (view === 'onboarding' || !hasOnboarding) {
     return <Onboarding mode="create" onComplete={() => { setHasOnboarding(true); setView('dashboard'); }} />;
   }
@@ -1516,8 +1588,8 @@ export default function App() {
     );
   }
 
-  if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} />;
-  if (view === 'stories') return <Stories onBack={() => setView('dashboard')} />;
+  if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
+  if (view === 'stories') return <Stories onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
   if (view === 'tarot') return <Tarot onBack={() => setView('dashboard')} />;
 
   return (
@@ -1526,6 +1598,8 @@ export default function App() {
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
       onEditBirthData={() => setView('profile_edit')}
+      onDeleteProfile={deleteProfile}
+      deletingProfile={deletingProfile}
     />
   );
 }

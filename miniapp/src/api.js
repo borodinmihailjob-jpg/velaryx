@@ -1,5 +1,14 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const DEV_AUTH_ALLOWED = import.meta.env.VITE_ALLOW_DEV_AUTH === 'true';
+
+class ApiError extends Error {
+  constructor(message, status, detail) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
 
 function readInitDataFromUrl() {
   try {
@@ -80,7 +89,7 @@ async function throwResponseError(response) {
   } else if (typeof detail === 'object' && detail !== null) {
     detail = detail.message || JSON.stringify(detail);
   }
-  throw new Error(detail || `Request failed: ${response.status}`);
+  throw new ApiError(detail || `Request failed: ${response.status}`, response.status, payload);
 }
 
 export async function apiRequest(path, options = {}) {

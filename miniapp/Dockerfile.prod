@@ -1,0 +1,26 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+ARG VITE_API_BASE_URL=/api
+ARG VITE_ALLOW_DEV_AUTH=false
+ARG VITE_TAROT_LOADING_GIF=/tarot-loader.gif
+ARG VITE_BOT_USERNAME=replace_me_bot
+ARG VITE_APP_NAME=app
+
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_ALLOW_DEV_AUTH=${VITE_ALLOW_DEV_AUTH}
+ENV VITE_TAROT_LOADING_GIF=${VITE_TAROT_LOADING_GIF}
+ENV VITE_BOT_USERNAME=${VITE_BOT_USERNAME}
+ENV VITE_APP_NAME=${VITE_APP_NAME}
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . ./
+RUN npm run build
+
+FROM nginx:1.27-alpine
+
+COPY nginx.prod.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html

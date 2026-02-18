@@ -64,3 +64,53 @@ def test_natal_forecast_tarot_flow(client):
     else:
         assert len(tarot_payload["cards"]) == 3
 
+
+def test_delete_profile_resets_user_data(client):
+    headers = {"X-TG-USER-ID": "777"}
+
+    profile_resp = client.post(
+        "/v1/natal/profile",
+        headers=headers,
+        json={
+            "birth_date": "1993-11-23",
+            "birth_time": "09:15:00",
+            "birth_place": "Moscow",
+            "latitude": 55.7558,
+            "longitude": 37.6173,
+            "timezone": "Europe/Moscow",
+        },
+    )
+    assert profile_resp.status_code == 200
+    profile_id = profile_resp.json()["id"]
+
+    calculate_resp = client.post(
+        "/v1/natal/calculate",
+        headers=headers,
+        json={"profile_id": profile_id},
+    )
+    assert calculate_resp.status_code == 200
+
+    forecast_resp = client.get("/v1/forecast/daily", headers=headers)
+    assert forecast_resp.status_code == 200
+
+    tarot_resp = client.post(
+        "/v1/tarot/draw",
+        headers=headers,
+        json={"spread_type": "three_card", "question": "test"},
+    )
+    assert tarot_resp.status_code == 200
+
+    delete_resp = client.delete("/v1/natal/profile", headers=headers)
+    assert delete_resp.status_code == 200
+    payload = delete_resp.json()
+    assert payload["ok"] is True
+    assert payload["deleted_user"] is True
+    assert payload["deleted_birth_profiles"] >= 1
+    assert payload["deleted_natal_charts"] >= 1
+    assert payload["deleted_daily_forecasts"] >= 1
+    assert payload["deleted_tarot_sessions"] >= 1
+    assert payload["deleted_tarot_cards"] >= 1
+
+    assert client.get("/v1/natal/profile/latest", headers=headers).status_code == 404
+    assert client.get("/v1/natal/full", headers=headers).status_code == 404
+    assert client.get("/v1/forecast/daily", headers=headers).status_code == 404
