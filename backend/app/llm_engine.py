@@ -36,8 +36,8 @@ INSTRUCTION_PREFIX = (
     "Отвечай только на русском языке. "
     "Пиши по делу, без markdown, без дисклеймеров."
 )
-TAROT_MAX_TOKENS_WITH_QUESTION = 520
-TAROT_MAX_TOKENS_NO_QUESTION = 260
+TAROT_MAX_TOKENS_WITH_QUESTION = 300
+TAROT_MAX_TOKENS_NO_QUESTION = 160
 
 
 def llm_provider_label() -> str | None:
@@ -346,7 +346,7 @@ def interpret_forecast_stories(
         f"{chr(10).join(key_aspects[:4]) if key_aspects else 'Нет данных'}"
     )
 
-    raw = _request_llm_text(prompt=prompt, temperature=0.55, max_tokens=800)
+    raw = _request_llm_text(prompt=prompt, temperature=0.55, max_tokens=450)
     if not raw:
         return None
 
@@ -443,7 +443,7 @@ def interpret_natal_sections(
         f"{chr(10).join(full_aspects) if full_aspects else 'Нет данных'}"
     )
 
-    raw = _request_llm_text(prompt=prompt, temperature=0.45, max_tokens=700)
+    raw = _request_llm_text(prompt=prompt, temperature=0.45, max_tokens=500)
     if not raw:
         return None
 
@@ -530,7 +530,7 @@ async def interpret_natal_sections_async(
         f"{chr(10).join(full_aspects) if full_aspects else 'Нет данных'}"
     )
 
-    raw = await _request_llm_text_async(prompt=prompt, temperature=0.45, max_tokens=1400)
+    raw = await _request_llm_text_async(prompt=prompt, temperature=0.45, max_tokens=500)
     if not raw:
         return None
 
@@ -595,7 +595,7 @@ async def interpret_forecast_stories_async(
         f"{chr(10).join(key_aspects[:4]) if key_aspects else 'Нет данных'}"
     )
 
-    raw = await _request_llm_text_async(prompt=prompt, temperature=0.55, max_tokens=800)
+    raw = await _request_llm_text_async(prompt=prompt, temperature=0.55, max_tokens=450)
     if not raw:
         return None
 

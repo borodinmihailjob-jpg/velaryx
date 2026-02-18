@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # Ollama (local LLM runtime)
     ollama_model: str = "qwen2.5:7b"
     ollama_base_url: str = "http://host.docker.internal:11434"
-    ollama_timeout_seconds: float = 60.0
+    ollama_timeout_seconds: float = 30.0
 
     # LLM provider is kept for backward compatibility in env files.
     # Only "ollama" is supported by runtime.
