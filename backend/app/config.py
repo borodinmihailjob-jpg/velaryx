@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     mini_app_public_base_url: str | None = None
 
     require_telegram_init_data: bool = False
-    allow_insecure_dev_auth: bool = True
+    allow_insecure_dev_auth: bool = False
     telegram_init_data_max_age_seconds: int = 900
 
     cors_origins_raw: str = ""

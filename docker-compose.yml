@@ -56,6 +56,18 @@ services:
       - ollama
       - ollama-pull
 
+  arq-worker:
+    build:
+      context: ./backend
+    command: python -m arq app.worker.WorkerSettings
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+      - ollama
+
   bot:
     build:
       context: ./bot

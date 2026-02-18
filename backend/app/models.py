@@ -40,7 +40,7 @@ class BirthProfile(Base):
     __tablename__ = "birth_profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False, index=True)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
     birth_time: Mapped[time] = mapped_column(Time, nullable=False)
     birth_place: Mapped[str] = mapped_column(Text, nullable=False)
@@ -56,7 +56,7 @@ class NatalChart(Base):
     __tablename__ = "natal_charts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("birth_profiles.id"), nullable=False)
+    profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("birth_profiles.id"), nullable=False, index=True)
     sun_sign: Mapped[str] = mapped_column(String(32), nullable=False)
     moon_sign: Mapped[str] = mapped_column(String(32), nullable=False)
     rising_sign: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -71,7 +71,7 @@ class DailyForecast(Base):
     __table_args__ = (UniqueConstraint("user_id", "forecast_date", name="uq_forecast_user_date"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False, index=True)
     forecast_date: Mapped[date] = mapped_column(Date, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     energy_score: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -83,7 +83,7 @@ class TarotSession(Base):
     __tablename__ = "tarot_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[int | None] = mapped_column(INT64, ForeignKey("users.id"))
+    user_id: Mapped[int | None] = mapped_column(INT64, ForeignKey("users.id"), index=True)
     spread_type: Mapped[str] = mapped_column(String(32), nullable=False)
     question: Mapped[str | None] = mapped_column(Text)
     seed: Mapped[str] = mapped_column(String(128), nullable=False)

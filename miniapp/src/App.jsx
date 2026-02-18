@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiRequest } from './api';
+import { apiRequest, pollTask } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
@@ -162,10 +162,11 @@ function shareLink(url, text) {
 }
 
 function useStartParam() {
+  // Hook must be called unconditionally at the top level (Rules of Hooks)
+  const launchParams = useLaunchParams();
   let sdkStartParam = null;
   try {
-    const params = useLaunchParams();
-    sdkStartParam = params?.startParam || null;
+    sdkStartParam = launchParams?.startParam ?? null;
   } catch {
     sdkStartParam = null;
   }
@@ -207,15 +208,22 @@ function Hint({ text }) {
       onMouseLeave={() => setShow(false)}
       onTouchStart={() => setShow(!show)}
     >
-      <span className="hint-icon">?</span>
-      {show && <span className="hint-text">{text}</span>}
+      <span
+        className="hint-icon"
+        role="button"
+        aria-label="Подсказка"
+        aria-expanded={show}
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && setShow(!show)}
+      >?</span>
+      {show && <span className="hint-text" role="tooltip">{text}</span>}
     </span>
   );
 }
 
 function Shell({ title, subtitle, children, onBack, className = '' }) {
   return (
-    <motion.main className={`screen ${className}`.trim()} variants={pageVariants} initial="initial" animate="animate" exit="exit">
+    <motion.div role="main" className={`screen ${className}`.trim()} variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <header className="screen-head">
         <div>
           {onBack && (
@@ -228,7 +236,7 @@ function Shell({ title, subtitle, children, onBack, className = '' }) {
         </div>
       </header>
       {children}
-    </motion.main>
+    </motion.div>
   );
 }
 
@@ -944,7 +952,7 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
 
         {/* ERROR MESSAGE */}
         {error && (
-          <motion.p className="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <motion.p className="error" role="alert" aria-live="polite" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {error}
           </motion.p>
         )}
@@ -967,10 +975,20 @@ function Dashboard({
     { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями и анимацией', action: onOpenTarot }
   ];
 
-  // Daily energy (simulated for demo - would come from API)
-  const todayEnergy = 78;
-  const todayMood = "прорыв";
-  const todayFocus = "творчество";
+  const [dailyForecast, setDailyForecast] = useState(null);
+  const [dailyLoading, setDailyLoading] = useState(true);
+  const [dailyError, setDailyError] = useState('');
+
+  useEffect(() => {
+    apiRequest('/v1/forecast/daily')
+      .then((data) => setDailyForecast(data))
+      .catch(() => setDailyError('Не удалось загрузить данные дня'))
+      .finally(() => setDailyLoading(false));
+  }, []);
+
+  const todayEnergy = dailyForecast?.energy_score ?? null;
+  const todayMood = dailyForecast?.payload?.mood ?? null;
+  const todayFocus = dailyForecast?.payload?.focus ?? null;
 
   return (
     <Shell title="Созвездие" subtitle="Астрология и таро в одном потоке.">
@@ -1024,23 +1042,25 @@ function Dashboard({
                 justifyContent: 'center',
                 position: 'relative'
               }}>
-                <div style={{
-                  position: 'absolute',
-                  inset: '-3px',
-                  borderRadius: '50%',
-                  background: `conic-gradient(var(--accent-vibrant) 0% ${todayEnergy}%, transparent ${todayEnergy}% 100%)`,
-                  mask: 'radial-gradient(circle, transparent 32px, black 33px, black 36px, transparent 37px)',
-                  WebkitMask: 'radial-gradient(circle, transparent 32px, black 33px, black 36px, transparent 37px)'
-                }} />
+                {todayEnergy !== null && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: '-3px',
+                    borderRadius: '50%',
+                    background: `conic-gradient(var(--accent-vibrant) 0% ${todayEnergy}%, transparent ${todayEnergy}% 100%)`,
+                    mask: 'radial-gradient(circle, transparent 32px, black 33px, black 36px, transparent 37px)',
+                    WebkitMask: 'radial-gradient(circle, transparent 32px, black 33px, black 36px, transparent 37px)'
+                  }} />
+                )}
                 <span style={{
-                  fontSize: '20px',
+                  fontSize: dailyLoading ? '14px' : '20px',
                   fontWeight: '700',
                   background: 'var(--gradient-mystical)',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text'
                 }}>
-                  {todayEnergy}
+                  {dailyLoading ? '···' : (todayEnergy ?? '—')}
                 </span>
                 <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
                   energy
@@ -1049,6 +1069,10 @@ function Dashboard({
             </div>
 
             {/* Insights */}
+            {dailyError && (
+              <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', margin: 0 }}>{dailyError}</p>
+            )}
+            {!dailyError && (
             <div style={{ display: 'flex', gap: 'var(--spacing-1)', flexWrap: 'wrap' }}>
               <span style={{
                 background: 'var(--accent-glow)',
@@ -1057,9 +1081,10 @@ function Dashboard({
                 padding: 'var(--spacing-1) var(--spacing-2)',
                 fontSize: '13px',
                 fontWeight: '600',
-                backdropFilter: 'var(--blur-light)'
+                backdropFilter: 'var(--blur-light)',
+                opacity: dailyLoading ? 0.5 : 1
               }}>
-                💫 {todayMood}
+                💫 {dailyLoading ? '···' : (todayMood ?? '—')}
               </span>
               <span style={{
                 background: 'rgba(191, 90, 242, 0.15)',
@@ -1068,11 +1093,13 @@ function Dashboard({
                 padding: 'var(--spacing-1) var(--spacing-2)',
                 fontSize: '13px',
                 fontWeight: '600',
-                backdropFilter: 'var(--blur-light)'
+                backdropFilter: 'var(--blur-light)',
+                opacity: dailyLoading ? 0.5 : 1
               }}>
-                ✨ {todayFocus}
+                ✨ {dailyLoading ? '···' : (todayFocus ? `в ${todayFocus}` : '—')}
               </span>
             </div>
+            )}
           </div>
         </motion.div>
 
@@ -1122,7 +1149,11 @@ function NatalChart({ onBack, onMissingProfile }) {
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        const data = await apiRequest('/v1/natal/full');
+        let data = await apiRequest('/v1/natal/full');
+        // Handle ARQ async path: server returns {status:"pending", task_id:"..."}
+        if (data?.status === 'pending' && data?.task_id) {
+          data = await pollTask(data.task_id);
+        }
         setChart(data);
         setLoading(false);
         return;
@@ -1210,7 +1241,7 @@ function NatalChart({ onBack, onMissingProfile }) {
       )}
 
       {error && (
-        <div className="stack">
+        <div className="stack" role="alert" aria-live="polite">
           <p className="error">{error}</p>
           <button className="ghost" onClick={loadChart}>Повторить загрузку</button>
         </div>
@@ -1250,6 +1281,13 @@ function Stories({ onBack, onMissingProfile }) {
 
   useEffect(() => {
     apiRequest('/v1/forecast/stories')
+      .then(async (data) => {
+        // Handle ARQ async path: server returns {status:"pending", task_id:"..."}
+        if (data?.status === 'pending' && data?.task_id) {
+          return pollTask(data.task_id);
+        }
+        return data;
+      })
       .then((data) => {
         setPayload(data);
         setIndex(0);
@@ -1289,7 +1327,7 @@ function Stories({ onBack, onMissingProfile }) {
   return (
     <Shell title="Сторис дня" subtitle="Краткий персональный поток на сегодня" onBack={onBack}>
       {loading && <p className="loading-text">Готовим сторис...</p>}
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert" aria-live="polite">{error}</p>}
 
       {slide && (
         <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
@@ -1413,7 +1451,7 @@ function Tarot({ onBack }) {
         </button>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert" aria-live="polite">{error}</p>}
 
       {loading && (
         <motion.div

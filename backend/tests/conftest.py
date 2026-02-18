@@ -4,6 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
+# Enable insecure dev auth globally for tests so X-TG-USER-ID header is accepted.
+# Security tests that need to verify auth rejection will patch settings directly.
+os.environ["ALLOW_INSECURE_DEV_AUTH"] = "true"
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402

@@ -11,6 +11,26 @@ import httpx
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Shared async HTTP client for Ollama (reused across ARQ worker calls)
+_async_client: httpx.AsyncClient | None = None
+
+
+def _get_async_client() -> httpx.AsyncClient:
+    global _async_client
+    if _async_client is None or _async_client.is_closed:
+        _async_client = httpx.AsyncClient(timeout=settings.ollama_timeout_seconds)
+    return _async_client
+
+
+def _sanitize_user_input(text: str, max_length: int = 500) -> str:
+    """Strip control characters and cap length before injecting into LLM prompts."""
+    text = _CONTROL_CHARS_RE.sub("", text)
+    return text[:max_length]
+
+
 INSTRUCTION_PREFIX = (
     "Ты профессиональный астролог и таролог. "
     "Отвечай только на русском языке. "
@@ -69,6 +89,53 @@ def _request_ollama_text(prompt: str, temperature: float, max_tokens: int) -> st
         logger.warning("Ollama request failed model=%s status=%s body=%s", model, status, body)
     except Exception as exc:
         logger.warning("Ollama request failed model=%s error=%s", model, str(exc))
+    return None
+
+
+# ── Async Ollama client ─────────────────────────────────────────────
+
+async def _request_ollama_text_async(prompt: str, temperature: float, max_tokens: int) -> str | None:
+    model = settings.ollama_model.strip()
+    if not model:
+        return None
+
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
+    payload = {
+        "model": model,
+        "prompt": f"{INSTRUCTION_PREFIX}\n\n{prompt}",
+        "stream": False,
+        "options": {"temperature": temperature, "num_predict": max_tokens},
+    }
+    try:
+        client = _get_async_client()
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            return None
+        text = data.get("response")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    except httpx.ReadTimeout:
+        logger.warning("Ollama async request failed model=%s error=timeout after %ss", model, settings.ollama_timeout_seconds)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else -1
+        body = exc.response.text[:300] if exc.response is not None else ""
+        logger.warning("Ollama async request failed model=%s status=%s body=%s", model, status, body)
+    except Exception as exc:
+        logger.warning("Ollama async request failed model=%s error=%s", model, str(exc))
+    return None
+
+
+async def _request_llm_text_async(prompt: str, temperature: float, max_tokens: int) -> str | None:
+    started_at = time.time()
+    logger.info("LLM async request | provider=ollama")
+    result = await _request_ollama_text_async(prompt, temperature, max_tokens)
+    elapsed = time.time() - started_at
+    if result:
+        logger.info("LLM async success | provider=ollama | time=%.2fs", elapsed)
+        return result
+    logger.error("LLM async FAILED | provider=ollama | time=%.2fs", elapsed)
     return None
 
 
@@ -165,8 +232,9 @@ def interpret_tarot_reading(question: str | None, cards: list[dict[str, Any]]) -
     has_explicit_question = bool(question and question.strip())
     max_tokens = TAROT_MAX_TOKENS_WITH_QUESTION if has_explicit_question else TAROT_MAX_TOKENS_NO_QUESTION
     response_size_hint = "5-8 абзацев, до 1400 символов" if has_explicit_question else "3-5 абзацев, до 900 символов"
+    safe_question = _sanitize_user_input(user_question) if has_explicit_question else user_question
     question_context = (
-        f"Вопрос пользователя: {user_question}"
+        f"Вопрос пользователя: {safe_question}"
         if has_explicit_question
         else "Явный вопрос не задан. Дай общий ориентир на ближайшие сутки."
     )
@@ -273,7 +341,7 @@ def interpret_forecast_stories(
         f"Энергия: {energy_score}/100\n"
         f"Режим дня: {mood}\n"
         f"Фокус дня: {focus}\n"
-        f"Натальный контекст: {natal_summary or 'Нет данных'}\n"
+        f"Натальный контекст: {_sanitize_user_input(natal_summary, max_length=800) if natal_summary else 'Нет данных'}\n"
         "Ключевые аспекты:\n"
         f"{chr(10).join(key_aspects[:4]) if key_aspects else 'Нет данных'}"
     )
@@ -350,7 +418,7 @@ def interpret_natal_sections(
         f"Солнце: {sun_sign}\n"
         f"Луна: {moon_sign}\n"
         f"Асцендент: {rising_sign}\n"
-        f"Краткий натальный контекст: {natal_summary or 'Нет данных'}\n\n"
+        f"Краткий натальный контекст: {_sanitize_user_input(natal_summary, max_length=800) if natal_summary else 'Нет данных'}\n\n"
         "Ключевые аспекты:\n"
         f"{chr(10).join(key_aspects) if key_aspects else 'Нет данных'}\n\n"
         "Планетный профиль:\n"
@@ -401,3 +469,141 @@ def interpret_natal_sections(
             result[key] = value.strip()
 
     return result or None
+
+
+# ── Async public API (used by ARQ workers) ──────────────────────────
+
+async def interpret_natal_sections_async(
+    *,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+    natal_summary: str,
+    key_aspects: list[str],
+    planetary_profile: list[str],
+    house_cusps: list[str],
+    planets_in_houses: list[str],
+    mc_line: str,
+    nodes_line: str,
+    house_rulers: list[str],
+    dispositors: list[str],
+    essential_dignities: list[str],
+    configurations: list[str],
+    full_aspects: list[str],
+) -> dict[str, str] | None:
+    safe_natal_summary = _sanitize_user_input(natal_summary, max_length=800) if natal_summary else ""
+    prompt = (
+        "Ты опытный практикующий астролог. На входе факты натальной карты.\n"
+        "Нужно выдать понятные и полезные интерпретации на русском языке.\n"
+        "Тон: конкретный, спокойный, прикладной. Без мистификации и без воды.\n"
+        "Не давай дисклеймеров, не упоминай ИИ, не используй markdown.\n\n"
+        "Верни СТРОГО JSON-объект с 10 ключами:\n"
+        "key_aspects, planetary_profile, house_cusps, mc_axis, lunar_nodes, house_rulers, dispositors, essential_dignities, configurations, natal_explanation.\n"
+        "Значение каждого ключа — строка из 3-6 предложений.\n"
+        "В каждом блоке добавь хотя бы 1 практический ориентир: что усилить/чего избегать.\n"
+        "Без дополнительных ключей и без обрамляющего текста.\n\n"
+        f"Солнце: {sun_sign}\n"
+        f"Луна: {moon_sign}\n"
+        f"Асцендент: {rising_sign}\n"
+        f"Краткий натальный контекст: {safe_natal_summary or 'Нет данных'}\n\n"
+        "Ключевые аспекты:\n"
+        f"{chr(10).join(key_aspects) if key_aspects else 'Нет данных'}\n\n"
+        "Планетный профиль:\n"
+        f"{chr(10).join(planetary_profile) if planetary_profile else 'Нет данных'}\n\n"
+        "Куспиды домов:\n"
+        f"{chr(10).join(house_cusps) if house_cusps else 'Нет данных'}\n\n"
+        "Планеты в домах:\n"
+        f"{chr(10).join(planets_in_houses) if planets_in_houses else 'Нет данных'}\n\n"
+        "MC:\n"
+        f"{mc_line or 'Нет данных'}\n\n"
+        "Лунные узлы:\n"
+        f"{nodes_line or 'Нет данных'}\n\n"
+        "Управители домов:\n"
+        f"{chr(10).join(house_rulers) if house_rulers else 'Нет данных'}\n\n"
+        "Диспозиторы:\n"
+        f"{chr(10).join(dispositors) if dispositors else 'Нет данных'}\n\n"
+        "Эссенциальные достоинства:\n"
+        f"{chr(10).join(essential_dignities) if essential_dignities else 'Нет данных'}\n\n"
+        "Конфигурации карты:\n"
+        f"{chr(10).join(configurations) if configurations else 'Нет данных'}\n\n"
+        "Полная матрица аспектов:\n"
+        f"{chr(10).join(full_aspects) if full_aspects else 'Нет данных'}"
+    )
+
+    raw = await _request_llm_text_async(prompt=prompt, temperature=0.45, max_tokens=1400)
+    if not raw:
+        return None
+
+    payload = _extract_json_dict(raw)
+    if not payload:
+        return None
+
+    result: dict[str, str] = {}
+    for key in (
+        "key_aspects",
+        "planetary_profile",
+        "house_cusps",
+        "mc_axis",
+        "lunar_nodes",
+        "house_rulers",
+        "dispositors",
+        "essential_dignities",
+        "configurations",
+        "natal_explanation",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+
+    return result or None
+
+
+async def interpret_forecast_stories_async(
+    *,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+    energy_score: int,
+    mood: str,
+    focus: str,
+    natal_summary: str,
+    key_aspects: list[str],
+) -> list[dict[str, str]] | None:
+    safe_natal_summary = _sanitize_user_input(natal_summary, max_length=800) if natal_summary else ""
+    prompt = (
+        "Собери персональный сторис-пак на один день в стиле практичного гороскопа.\n"
+        "Нужен только русский язык, без markdown.\n"
+        "Тон: конкретно, применимо в течение дня, без воды.\n"
+        "Не обещай 100% исходов и не используй мистические формулировки.\n\n"
+        "Верни СТРОГО JSON-объект:\n"
+        '{"slides": [{"title": "...", "body": "2-3 коротких предложения", "badge": "короткая метка", '
+        '"tip": "практический шаг до конца дня", "avoid": "чего избегать сегодня", '
+        '"timing": "лучшее окно по времени", "animation": "одно из: glow, pulse, float, orbit"}]}\n\n'
+        "Сделай 4 слайда:\n"
+        "1) Общая энергия и фокус дня.\n"
+        "2) Работа/деньги.\n"
+        "3) Общение/отношения.\n"
+        "4) Самочувствие и восстановление.\n\n"
+        f"Солнце: {sun_sign}\n"
+        f"Луна: {moon_sign}\n"
+        f"Асцендент: {rising_sign}\n"
+        f"Энергия: {energy_score}/100\n"
+        f"Режим дня: {mood}\n"
+        f"Фокус дня: {focus}\n"
+        f"Натальный контекст: {safe_natal_summary or 'Нет данных'}\n"
+        "Ключевые аспекты:\n"
+        f"{chr(10).join(key_aspects[:4]) if key_aspects else 'Нет данных'}"
+    )
+
+    raw = await _request_llm_text_async(prompt=prompt, temperature=0.55, max_tokens=800)
+    if not raw:
+        return None
+
+    payload = _extract_json_dict(raw)
+    if not payload:
+        return None
+
+    slides = _normalize_story_slides(payload)
+    if len(slides) < 3:
+        return None
+    return slides

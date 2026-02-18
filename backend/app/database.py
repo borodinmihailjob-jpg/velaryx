@@ -20,6 +20,9 @@ if settings.database_url.startswith("sqlite"):
         engine_kwargs["poolclass"] = StaticPool
 else:
     engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+    engine_kwargs["pool_timeout"] = 30
 
 engine = create_engine(
     settings.database_url,
@@ -34,5 +37,8 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

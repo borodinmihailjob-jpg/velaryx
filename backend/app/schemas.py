@@ -1,7 +1,8 @@
 from datetime import date, datetime, time
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class BirthProfileCreateRequest(BaseModel):
@@ -11,6 +12,13 @@ class BirthProfileCreateRequest(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     timezone: str = Field(min_length=3, max_length=64)
+
+    @field_validator("birth_date")
+    @classmethod
+    def birth_date_in_range(cls, v: date) -> date:
+        if v.year < 1800 or v.year > 2100:
+            raise ValueError("birth_date must be between 1800 and 2100")
+        return v
 
 
 class BirthProfileResponse(BaseModel):
@@ -83,7 +91,7 @@ class ForecastStoriesResponse(BaseModel):
 
 
 class TarotDrawRequest(BaseModel):
-    spread_type: str = Field(default="three_card")
+    spread_type: Literal["one_card", "three_card", "relationship", "career"] = "three_card"
     question: str | None = Field(default=None, max_length=500)
 
 
@@ -114,3 +122,9 @@ class TelemetryEventRequest(BaseModel):
 
 class TelemetryEventResponse(BaseModel):
     ok: bool = True
+
+
+class TaskStatusResponse(BaseModel):
+    status: Literal["pending", "done", "failed"]
+    result: dict[str, Any] | None = None
+    error: str | None = None

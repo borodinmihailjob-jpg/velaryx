@@ -6,6 +6,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // allowedHosts: true is intentional — needed for Tailscale Funnel in dev
     allowedHosts: true
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.js']
   }
 });

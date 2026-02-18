@@ -56,6 +56,15 @@
   --radius-xl: 20px;
   --radius-2xl: 24px;
   --radius-full: 999px;
+
+  /* Aliases for legacy component references */
+  --border: rgba(255, 255, 255, 0.10);
+  --border-light: rgba(255, 255, 255, 0.06);
+  --bg-card: var(--bg-elevated);
+  --bg-card-hover: var(--bg-secondary);
+  --bg-input: var(--bg-secondary);
+  --text-muted: var(--text-tertiary);
+  --gradient-cta: var(--gradient-mystical);
 }
 
 * {

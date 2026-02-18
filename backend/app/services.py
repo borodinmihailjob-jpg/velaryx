@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
 import redis
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.orm import Session, joinedload
 
 from . import models
@@ -873,8 +873,31 @@ def get_or_create_daily_forecast(db: Session, user_id: int, forecast_date: date)
         payload=payload,
     )
     db.add(forecast)
-    db.commit()
-    db.refresh(forecast)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = (
+            db.query(models.DailyForecast)
+            .filter(models.DailyForecast.user_id == user_id, models.DailyForecast.forecast_date == forecast_date)
+            .first()
+        )
+        if existing:
+            return existing
+        raise
+
+    try:
+        db.refresh(forecast)
+    except (InvalidRequestError, Exception):
+        # Re-fetch from DB — handles SQLite StaticPool edge cases and other session issues.
+        db.rollback()
+        forecast = (
+            db.query(models.DailyForecast)
+            .filter(models.DailyForecast.user_id == user_id, models.DailyForecast.forecast_date == forecast_date)
+            .first()
+        )
+        if forecast is None:
+            raise RuntimeError("DailyForecast was committed but could not be retrieved")
     return forecast
 
 

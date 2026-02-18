@@ -1,17 +1,26 @@
+import asyncio
 from contextlib import asynccontextmanager
 import json
 import logging
 import time
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from arq import create_pool
+from arq.connections import RedisSettings
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 from .config import settings
+from .limiter import limiter
 from .localization import localize_json_bytes
-from .routers import forecast, health, natal, tarot, telemetry
+from .routers import forecast, health, natal, tarot, telemetry, tasks as tasks_router
 try:
     from .routers import geo
 except ImportError:  # pragma: no cover
@@ -50,7 +59,12 @@ class ApiAuditAndLocalizationMiddleware(BaseHTTPMiddleware):
         started_at = time.perf_counter()
 
         request_content_type = request.headers.get("content-type", "")
-        request_body = await request.body()
+        content_length = int(request.headers.get("content-length", 0) or 0)
+        # Only buffer request body for logging if small enough (avoid OOM on large uploads)
+        if content_length <= 102400:  # 100 KB
+            request_body = await request.body()
+        else:
+            request_body = b""
         request_preview = _body_preview(request_body, request_content_type)
 
         method = request.method
@@ -78,7 +92,9 @@ class ApiAuditAndLocalizationMiddleware(BaseHTTPMiddleware):
 
         response_content_type = response.headers.get("content-type", "")
         response_body = b""
+        body_size = 0
         async for chunk in response.body_iterator:
+            body_size += len(chunk)
             response_body += chunk
 
         localized_body = response_body
@@ -87,7 +103,9 @@ class ApiAuditAndLocalizationMiddleware(BaseHTTPMiddleware):
             and response.status_code not in (204, 304)
             and "application/json" in response_content_type
         ):
-            localized_body = localize_json_bytes(response_body)
+            # Run sync (potentially blocking) localization in a threadpool thread
+            # to avoid blocking the event loop during Google Translate HTTP calls.
+            localized_body = await asyncio.to_thread(localize_json_bytes, response_body)
 
         response_preview = _body_preview(localized_body, response_content_type)
         elapsed_ms = (time.perf_counter() - started_at) * 1000
@@ -120,11 +138,34 @@ logging.getLogger("aiogram.dispatcher").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
+    # Initialize ARQ connection pool for enqueueing background LLM jobs
+    try:
+        arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        app.state.arq_pool = arq_pool
+        logger.info("ARQ pool connected to %s", settings.redis_url)
+    except Exception as exc:
+        logger.warning("ARQ pool unavailable (Redis down?): %s — LLM endpoints will use fallback", exc)
+        app.state.arq_pool = None
+
     yield
+
+    if getattr(app.state, "arq_pool", None) is not None:
+        await app.state.arq_pool.close()
 
 
 app = FastAPI(title="AstroBot API", version="0.2.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(ApiAuditAndLocalizationMiddleware)
 
 if settings.cors_origins():
@@ -132,8 +173,8 @@ if settings.cors_origins():
         CORSMiddleware,
         allow_origins=settings.cors_origins(),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-TG-User-Id", "X-Telegram-Init-Data", "X-Internal-Api-Key"],
     )
 
 app.include_router(health.router)
@@ -143,3 +184,4 @@ app.include_router(natal.router)
 app.include_router(forecast.router)
 app.include_router(tarot.router)
 app.include_router(telemetry.router)
+app.include_router(tasks_router.router)
