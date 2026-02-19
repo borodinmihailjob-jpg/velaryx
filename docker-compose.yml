@@ -28,15 +28,8 @@ services:
       OLLAMA_HOST: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
     entrypoint: ["/bin/sh", "-lc"]
-    command: |
-      for i in $(seq 1 60); do
-        if ollama list >/dev/null 2>&1; then
-          break
-        fi
-        echo "Waiting for ollama..."
-        sleep 2
-      done
-      ollama pull "$OLLAMA_MODEL"
+    command:
+      - until ollama list >/dev/null 2>&1; do echo "Waiting for ollama..."; sleep 2; done; ollama pull "$$OLLAMA_MODEL"
     depends_on:
       - ollama
 
@@ -50,6 +43,12 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       - postgres
       - redis
@@ -74,7 +73,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   miniapp:
     image: node:20-alpine
@@ -88,7 +88,8 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pg_data:
