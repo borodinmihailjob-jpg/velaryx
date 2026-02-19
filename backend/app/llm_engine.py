@@ -558,6 +558,91 @@ async def interpret_natal_sections_async(
     return result or None
 
 
+# ── Numerology async interpretation ─────────────────────────────────
+
+_NUMEROLOGY_ARCHETYPES: dict[int, str] = {
+    1: "Лидер, первопроходец, независимость",
+    2: "Дипломат, партнёрство, чувствительность",
+    3: "Творец, самовыражение, оптимизм",
+    4: "Строитель, стабильность, дисциплина",
+    5: "Свобода, перемены, авантюризм",
+    6: "Гармония, забота, ответственность",
+    7: "Мистик, анализ, духовный поиск",
+    8: "Власть, амбиции, материальный успех",
+    9: "Мудрец, альтруизм, завершение цикла",
+    11: "Мастер-интуит, вдохновение, духовное просветление",
+    22: "Мастер-строитель, великие свершения, мировой масштаб",
+    33: "Мастер-учитель, сострадание, бескорыстное служение",
+}
+
+
+async def interpret_numerology_async(
+    *,
+    full_name: str,
+    birth_date: str,
+    life_path: int,
+    expression: int,
+    soul_urge: int,
+    personality: int,
+    birthday: int,
+    personal_year: int,
+) -> dict[str, str] | None:
+    """Generate LLM interpretation for all 6 numerology numbers.
+
+    Returns a dict with keys: life_path, expression, soul_urge, personality,
+    birthday, personal_year. Each value is a 3-5 sentence Russian interpretation.
+    Returns None if LLM call fails (caller uses static fallback).
+    """
+    safe_name = _sanitize_user_input(full_name, max_length=200)
+
+    def _arch(n: int) -> str:
+        return _NUMEROLOGY_ARCHETYPES.get(n, "")
+
+    master_nums = [n for n in (life_path, expression, soul_urge, personality, birthday, personal_year)
+                   if n in {11, 22, 33}]
+    master_note = (
+        f"Обрати особое внимание: числа {', '.join(str(n) for n in master_nums)} "
+        "являются мастер-числами — отметь их усиленный потенциал.\n"
+        if master_nums else ""
+    )
+
+    prompt = (
+        "Ты профессиональный нумеролог с глубоким знанием Пифагорейской нумерологии. "
+        "Отвечай только на русском языке, без markdown, без дисклеймеров, без упоминания ИИ.\n"
+        "Тон: мистический, но прикладной — каждое число должно давать практический ориентир.\n\n"
+        f"{master_note}"
+        "Верни СТРОГО JSON-объект с 6 ключами:\n"
+        "life_path, expression, soul_urge, personality, birthday, personal_year.\n"
+        "Значение каждого ключа — строка из 3-5 предложений на русском.\n"
+        "Включи: суть числа, сильные стороны, вызов/тень, практический совет.\n"
+        "Без дополнительных ключей и без обрамляющего текста.\n\n"
+        f"Имя: {safe_name}\n"
+        f"Дата рождения: {birth_date}\n\n"
+        f"Число Жизненного Пути: {life_path} ({_arch(life_path)})\n"
+        f"Число Выражения (Судьбы): {expression} ({_arch(expression)})\n"
+        f"Число Души: {soul_urge} ({_arch(soul_urge)})\n"
+        f"Число Личности: {personality} ({_arch(personality)})\n"
+        f"Число Дня Рождения: {birthday} ({_arch(birthday)})\n"
+        f"Число Личного Года: {personal_year} ({_arch(personal_year)})\n"
+    )
+
+    raw = await _request_llm_text_async(prompt=prompt, temperature=0.55, max_tokens=500)
+    if not raw:
+        return None
+
+    payload = _extract_json_dict(raw)
+    if not payload:
+        return None
+
+    result: dict[str, str] = {}
+    for key in ("life_path", "expression", "soul_urge", "personality", "birthday", "personal_year"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+
+    return result if len(result) >= 4 else None
+
+
 async def interpret_forecast_stories_async(
     *,
     sun_sign: str,

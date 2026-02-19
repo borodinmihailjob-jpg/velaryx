@@ -128,3 +128,38 @@ class TaskStatusResponse(BaseModel):
     status: Literal["pending", "done", "failed"]
     result: dict[str, Any] | None = None
     error: str | None = None
+
+
+class NumerologyCalculateRequest(BaseModel):
+    full_name: str = Field(min_length=2, max_length=200)
+    birth_date: date
+
+    @field_validator("birth_date")
+    @classmethod
+    def birth_date_in_range(cls, v: date) -> date:
+        if v.year < 1800 or v.year > 2100:
+            raise ValueError("birth_date must be between 1800 and 2100")
+        return v
+
+    @field_validator("full_name")
+    @classmethod
+    def name_must_have_letters(cls, v: str) -> str:
+        letters = [c for c in v if c.isalpha()]
+        if len(letters) < 2:
+            raise ValueError("full_name must contain at least 2 letters")
+        return v.strip()
+
+
+class NumerologyNumbers(BaseModel):
+    life_path: int
+    expression: int
+    soul_urge: int
+    personality: int
+    birthday: int
+    personal_year: int
+
+
+class NumerologyCalculateResponse(BaseModel):
+    numbers: NumerologyNumbers
+    status: Literal["pending", "done"]
+    task_id: str | None = None

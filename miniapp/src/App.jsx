@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiRequest, pollTask } from './api';
+import { apiRequest, pollTask, calculateNumerology } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
@@ -57,8 +57,49 @@ const TZ_LABELS = {
 const VIEW_TELEMETRY_EVENTS = {
   natal: 'open_natal_screen',
   stories: 'open_stories_screen',
-  tarot: 'open_tarot_screen'
+  tarot: 'open_tarot_screen',
+  numerology: 'open_numerology_screen'
 };
+
+const NUMEROLOGY_LOADING_HINTS = [
+  'Числа раскрывают тайный код твоей судьбы...',
+  'Пифагор знал: каждая цифра — вибрация вселенной...',
+  'Имя и дата складываются в уникальный узор...',
+  'Мастер-числа требуют особого внимания...',
+  'Интерпретация почти готова...'
+];
+
+const NUMEROLOGY_ARCHETYPES = {
+  1: 'Лидер', 2: 'Дипломат', 3: 'Творец', 4: 'Строитель',
+  5: 'Авантюрист', 6: 'Гармонизатор', 7: 'Мистик', 8: 'Властелин',
+  9: 'Мудрец', 11: 'Интуит', 22: 'Великий Строитель', 33: 'Учитель'
+};
+
+const NUMEROLOGY_GRADIENTS = {
+  1: 'linear-gradient(135deg, #FF6B35 0%, #FFD700 100%)',
+  2: 'linear-gradient(135deg, #C0C0C0 0%, #4A90D9 100%)',
+  3: 'linear-gradient(135deg, #FFD700 0%, #FF8C00 100%)',
+  4: 'linear-gradient(135deg, #228B22 0%, #8B6914 100%)',
+  5: 'linear-gradient(135deg, #40E0D0 0%, #9B59B6 100%)',
+  6: 'linear-gradient(135deg, #FF69B4 0%, #FFD700 100%)',
+  7: 'linear-gradient(135deg, #4B0082 0%, #8B00FF 100%)',
+  8: 'linear-gradient(135deg, #1a1a1a 0%, #FFD700 100%)',
+  9: 'linear-gradient(135deg, #DC143C 0%, #F5F5F5 100%)',
+  11: 'linear-gradient(135deg, #FF6B6B 0%, #FFE66D 30%, #A8E6CF 60%, #88D8B0 100%)',
+  22: 'linear-gradient(135deg, #1a237e 0%, #283593 50%, #FFD700 100%)',
+  33: 'linear-gradient(135deg, #880E4F 0%, #AD1457 50%, #F8BBD0 100%)'
+};
+
+const NUMEROLOGY_LABELS = {
+  life_path: 'Число Жизненного Пути',
+  expression: 'Число Выражения',
+  soul_urge: 'Число Души',
+  personality: 'Число Личности',
+  birthday: 'Число Дня Рождения',
+  personal_year: 'Число Личного Года'
+};
+
+const NUMEROLOGY_ORDER = ['life_path', 'expression', 'soul_urge', 'personality', 'birthday', 'personal_year'];
 
 const NATAL_LOADING_HINTS = [
   'Сверяем дыхание Луны и линию твоего рождения...',
@@ -182,7 +223,8 @@ function startParamToView(startParam) {
     sc_onboarding: 'onboarding',
     sc_natal: 'natal',
     sc_stories: 'stories',
-    sc_tarot: 'tarot'
+    sc_tarot: 'tarot',
+    sc_numerology: 'numerology'
   };
   return mapping[startParam] || null;
 }
@@ -961,10 +1003,232 @@ function Onboarding({ mode = 'create', onComplete, onBack }) {
   );
 }
 
+function NumerologyCard({ numberKey, value, interpretation, interpretationLoading }) {
+  const gradient = NUMEROLOGY_GRADIENTS[value] || NUMEROLOGY_GRADIENTS[9];
+  const archetype = NUMEROLOGY_ARCHETYPES[value] || '';
+  const label = NUMEROLOGY_LABELS[numberKey] || numberKey;
+  const isMaster = value === 11 || value === 22 || value === 33;
+
+  return (
+    <motion.article
+      className="numerology-card"
+      variants={staggerItem}
+      style={{ '--num-gradient': gradient }}
+    >
+      <div className="numerology-card-header">
+        <div className="numerology-number-circle" style={{ background: gradient }}>
+          <motion.span
+            className="numerology-big-number"
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {value}
+          </motion.span>
+        </div>
+        <div className="numerology-card-titles">
+          <p className="numerology-label">{label}</p>
+          <p className="numerology-archetype">{archetype}</p>
+          {isMaster && (
+            <span className="numerology-master-badge">✦ Мастер-число</span>
+          )}
+        </div>
+      </div>
+
+      <div className="numerology-interpretation">
+        {interpretationLoading ? (
+          <motion.p
+            className="numerology-interp-loading"
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 1.8, repeat: Infinity }}
+          >
+            Толкование загружается...
+          </motion.p>
+        ) : interpretation ? (
+          <p>{interpretation}</p>
+        ) : (
+          <p className="numerology-interp-placeholder">Интерпретация временно недоступна.</p>
+        )}
+      </div>
+    </motion.article>
+  );
+}
+
+function Numerology({ onBack, onMissingProfile }) {
+  const [step, setStep] = useState(0);
+  const [nameInput, setNameInput] = useState('');
+  const [birthDateInput, setBirthDateInput] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [numbers, setNumbers] = useState(null);
+  const [interpretations, setInterpretations] = useState(null);
+  const [interpretationLoading, setInterpretationLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [hintIndex, setHintIndex] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setProfileLoading(true);
+    apiRequest('/v1/natal/profile/latest')
+      .then((profile) => {
+        if (!active) return;
+        if (profile?.birth_date) {
+          setBirthDateInput(String(profile.birth_date));
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setProfileLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!interpretationLoading) return undefined;
+    const id = setInterval(() => {
+      setHintIndex((prev) => (prev + 1) % NUMEROLOGY_LOADING_HINTS.length);
+    }, 2600);
+    return () => clearInterval(id);
+  }, [interpretationLoading]);
+
+  const canSubmit = nameInput.trim().length >= 2 && birthDateInput.length === 10;
+
+  const handleCalculate = async () => {
+    if (!canSubmit) return;
+    setError('');
+    setSubmitLoading(true);
+    setNumbers(null);
+    setInterpretations(null);
+
+    try {
+      const data = await calculateNumerology(nameInput.trim(), birthDateInput);
+      setNumbers(data.numbers);
+      setStep(1);
+
+      if (data.task_id) {
+        setInterpretationLoading(true);
+        pollTask(data.task_id)
+          .then((taskResult) => { setInterpretations(taskResult?.interpretations || null); })
+          .catch(() => { setInterpretations(null); })
+          .finally(() => { setInterpretationLoading(false); });
+      }
+    } catch (e) {
+      if (isMissingProfileError(e)) { onMissingProfile?.(); return; }
+      setError(String(e?.message || e || 'Не удалось рассчитать числа.'));
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  if (step === 0) {
+    return (
+      <Shell title="Нумерология" subtitle="Числа раскрывают код вашей судьбы" onBack={onBack}>
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+          <motion.article className="glass-card" variants={staggerItem} style={{ padding: 'var(--spacing-3)' }}>
+            <p style={{ fontSize: '15px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
+              Введите полное имя при рождении (как в документах) и дату рождения для расчёта шести ключевых чисел.
+            </p>
+          </motion.article>
+
+          <motion.div variants={staggerItem}>
+            <label>
+              Полное имя при рождении
+              <Hint text="Имя, фамилия и отчество (при наличии) как в документах" />
+              <input
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Иванов Иван Иванович"
+                autoComplete="name"
+              />
+              <span className="input-hint">Кириллица или латиница</span>
+            </label>
+          </motion.div>
+
+          <motion.div variants={staggerItem}>
+            <label>
+              Дата рождения
+              <Hint text="Если дата загружена из профиля, при необходимости исправьте" />
+              {profileLoading ? (
+                <span className="input-hint">Загружаем из профиля...</span>
+              ) : (
+                <input
+                  type="date"
+                  value={birthDateInput}
+                  onChange={(e) => setBirthDateInput(e.target.value)}
+                />
+              )}
+            </label>
+          </motion.div>
+
+          {error && (
+            <motion.p className="error" role="alert" aria-live="polite" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              {error}
+            </motion.p>
+          )}
+
+          <motion.button
+            className="cta"
+            onClick={handleCalculate}
+            disabled={submitLoading || profileLoading || !canSubmit}
+            variants={staggerItem}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
+          >
+            {submitLoading ? 'Считаем числа...' : 'Рассчитать нумерологию'}
+          </motion.button>
+        </motion.div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell title="Нумерология" subtitle={`Числовой код: ${nameInput.trim()}`} onBack={() => setStep(0)}>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+        {interpretationLoading && (
+          <motion.div
+            className="numerology-interp-banner"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={hintIndex}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                {NUMEROLOGY_LOADING_HINTS[hintIndex]}
+              </motion.span>
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        {numbers && NUMEROLOGY_ORDER.map((key) => (
+          <NumerologyCard
+            key={key}
+            numberKey={key}
+            value={numbers[key]}
+            interpretation={interpretations?.[key] || null}
+            interpretationLoading={interpretationLoading}
+          />
+        ))}
+
+        <motion.button
+          className="ghost"
+          onClick={() => setStep(0)}
+          variants={staggerItem}
+        >
+          Рассчитать заново
+        </motion.button>
+      </motion.div>
+    </Shell>
+  );
+}
+
 function Dashboard({
   onOpenNatal,
   onOpenStories,
   onOpenTarot,
+  onOpenNumerology,
   onEditBirthData,
   onDeleteProfile,
   deletingProfile
@@ -972,7 +1236,8 @@ function Dashboard({
   const menuItems = [
     { icon: '✨', label: 'Натальная карта', hint: 'Полный персональный разбор', action: onOpenNatal },
     { icon: '🌙', label: 'Сторис дня', hint: 'Короткие персональные инсайты', action: onOpenStories },
-    { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями и анимацией', action: onOpenTarot }
+    { icon: '🃏', label: 'Таро-расклад', hint: 'Карты с пояснениями и анимацией', action: onOpenTarot },
+    { icon: '🔢', label: 'Нумерология', hint: 'Числовой код судьбы и личности', action: onOpenNumerology }
   ];
 
   const [dailyForecast, setDailyForecast] = useState(null);
@@ -1629,12 +1894,14 @@ export default function App() {
   if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
   if (view === 'stories') return <Stories onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
   if (view === 'tarot') return <Tarot onBack={() => setView('dashboard')} />;
+  if (view === 'numerology') return <Numerology onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
 
   return (
     <Dashboard
       onOpenNatal={() => setView('natal')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
+      onOpenNumerology={() => setView('numerology')}
       onEditBirthData={() => setView('profile_edit')}
       onDeleteProfile={deleteProfile}
       deletingProfile={deletingProfile}

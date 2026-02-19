@@ -11,6 +11,7 @@ from .config import settings
 from .llm_engine import (
     interpret_natal_sections_async,
     interpret_forecast_stories_async,
+    interpret_numerology_async,
 )
 
 logger = logging.getLogger("astrobot.worker")
@@ -164,6 +165,112 @@ async def task_generate_stories(
     return result
 
 
+_NUMEROLOGY_FALLBACK: dict[str, str] = {
+    "life_path": (
+        "Число Жизненного Пути — главный вектор вашего развития. "
+        "Оно указывает на таланты, с которыми вы пришли в мир, и уроки, которые предстоит пройти. "
+        "Используйте его как компас при важных выборах."
+    ),
+    "expression": (
+        "Число Выражения отражает ваш полный потенциал, заложенный в имени. "
+        "Оно показывает, как вы проявляете себя в мире и к чему стремитесь. "
+        "Это ваша «зона роста» — то, что нужно развивать осознанно."
+    ),
+    "soul_urge": (
+        "Число Души раскрывает ваши истинные желания и внутренние мотивы. "
+        "То, что движет вами на уровне сердца. "
+        "Согласуйте внешние цели с этим числом — и получите подлинное удовлетворение."
+    ),
+    "personality": (
+        "Число Личности — это то, каким вас видят окружающие. "
+        "Ваша внешняя маска и стиль взаимодействия с миром. "
+        "Осознанное использование этой энергии помогает строить нужные связи."
+    ),
+    "birthday": (
+        "Число Дня Рождения — дополнительный талант или особый дар. "
+        "Это специфическая способность, которую вы принесли в воплощение. "
+        "Опирайтесь на неё в моменты неопределённости."
+    ),
+    "personal_year": (
+        "Число Личного Года задаёт тему текущего годичного цикла. "
+        "Оно указывает, чему стоит уделить особое внимание прямо сейчас. "
+        "Следование ритму личного года снижает сопротивление и ускоряет рост."
+    ),
+}
+
+
+async def task_generate_numerology(
+    ctx: dict[str, Any],
+    *,
+    user_id: int,
+    full_name: str,
+    birth_date: str,
+    current_date: str,
+    life_path: int,
+    expression: int,
+    soul_urge: int,
+    personality: int,
+    birthday: int,
+    personal_year: int,
+) -> dict[str, Any]:
+    job_id: str = ctx["job_id"]
+    redis = ctx["redis"]
+
+    logger.info(
+        "Worker: task_generate_numerology start | user_id=%s | job_id=%s",
+        user_id,
+        job_id,
+    )
+
+    llm_interpretations = await interpret_numerology_async(
+        full_name=full_name,
+        birth_date=birth_date,
+        life_path=life_path,
+        expression=expression,
+        soul_urge=soul_urge,
+        personality=personality,
+        birthday=birthday,
+        personal_year=personal_year,
+    )
+
+    if llm_interpretations:
+        logger.info(
+            "Worker: numerology LLM success | user_id=%s | job_id=%s",
+            user_id,
+            job_id,
+        )
+        interpretations = llm_interpretations
+    else:
+        logger.warning(
+            "Worker: numerology LLM failed, using static fallback | user_id=%s | job_id=%s",
+            user_id,
+            job_id,
+        )
+        interpretations = _NUMEROLOGY_FALLBACK
+
+    result = {
+        "numbers": {
+            "life_path": life_path,
+            "expression": expression,
+            "soul_urge": soul_urge,
+            "personality": personality,
+            "birthday": birthday,
+            "personal_year": personal_year,
+        },
+        "interpretations": interpretations,
+    }
+
+    task_key = f"arq_task:{job_id}"
+    task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
+    await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+    logger.info(
+        "Worker: task_generate_numerology done | user_id=%s | job_id=%s",
+        user_id,
+        job_id,
+    )
+    return result
+
+
 async def on_worker_startup(ctx: dict[str, Any]) -> None:
     logger.info("ARQ worker started")
 
@@ -173,7 +280,7 @@ async def on_worker_shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [task_generate_natal, task_generate_stories]
+    functions = [task_generate_natal, task_generate_stories, task_generate_numerology]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_startup = on_worker_startup
     on_shutdown = on_worker_shutdown

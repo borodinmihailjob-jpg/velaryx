@@ -25,6 +25,10 @@ try:
     from .routers import geo
 except ImportError:  # pragma: no cover
     geo = None
+try:
+    from .routers import numerology as numerology_router
+except ImportError:  # pragma: no cover
+    numerology_router = None
 
 
 logging.basicConfig(
@@ -185,3 +189,5 @@ app.include_router(forecast.router)
 app.include_router(tarot.router)
 app.include_router(telemetry.router)
 app.include_router(tasks_router.router)
+if numerology_router is not None:
+    app.include_router(numerology_router.router)

@@ -141,3 +141,19 @@ export async function pollTask(taskId, intervalMs = 2000, timeoutMs = 120_000) {
 
   throw new ApiError('Превышено время ожидания ответа от сервера', 408, null);
 }
+
+/**
+ * Calculate all 6 numerology numbers and enqueue LLM interpretation.
+ * @param {string} fullName - Full birth name (Cyrillic or Latin)
+ * @param {string} birthDate - ISO date string "YYYY-MM-DD"
+ * @returns {Promise<{numbers: object, status: string, task_id: string|null}>}
+ */
+export async function calculateNumerology(fullName, birthDate) {
+  return apiRequest('/v1/numerology/calculate', {
+    method: 'POST',
+    body: JSON.stringify({
+      full_name: fullName,
+      birth_date: birthDate,
+    }),
+  });
+}
