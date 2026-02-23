@@ -15,6 +15,23 @@ try {
   }
 }
 
+// Configure Telegram Mini App environment.
+// Must happen before React mounts:
+//   ready()              — removes Telegram's loading overlay
+//   expand()             — opens the app fullscreen (not half-panel)
+//   setBackgroundColor   — ensures dark bg for glass-morphism cards
+//     (without this, light-theme Telegram users see a white screen
+//      because semi-transparent cards become invisible on a white body)
+try {
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    tg.setBackgroundColor?.('#000000');
+    tg.setHeaderColor?.('#000000');
+  }
+} catch { /* ignore — running outside Telegram */ }
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error('[AstroBot] Missing #root element in DOM');
