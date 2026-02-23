@@ -1,14 +1,17 @@
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, services
 from ..config import settings
 from ..database import get_db
 from ..dependencies import current_user_dep
+from ..limiter import limiter
 from ..tarot_engine import card_image_url
 
+logger = logging.getLogger("astrobot.tarot")
 router = APIRouter(prefix="/v1/tarot", tags=["tarot"])
 
 
@@ -53,6 +56,44 @@ def draw_tarot(
             for card in response_cards
         ],
     )
+
+
+@router.post("/premium")
+@limiter.limit("5/minute")
+async def draw_tarot_premium(
+    request: Request,
+    payload: schemas.TarotDrawRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user_dep),
+):
+    """Premium tarot reading via OpenRouter Gemini.
+
+    Draws cards, enqueues ARQ background job and returns
+    {"status": "pending", "task_id": "..."} — client polls /v1/tasks/{task_id}.
+    """
+    if not settings.openrouter_api_key:
+        raise HTTPException(status_code=503, detail="Премиум LLM не настроен")
+
+    session = services.draw_tarot_reading(
+        db=db,
+        user_id=user.id,
+        spread_type=payload.spread_type,
+        question=payload.question,
+    )
+    cards = services.get_tarot_session(db=db, user_id=user.id, session_id=session.id).cards
+    cards_payload = services.build_tarot_cards_payload(cards)
+
+    arq_pool = request.app.state.arq_pool
+    job = await arq_pool.enqueue_job(
+        "task_generate_tarot_premium",
+        user_id=user.id,
+        question=session.question,
+        spread_type=session.spread_type,
+        cards=cards_payload,
+        created_at=session.created_at.isoformat(),
+    )
+    logger.info("Tarot premium LLM enqueued | user_id=%s | job_id=%s", user.id, job.job_id)
+    return {"status": "pending", "task_id": job.job_id}
 
 
 @router.get("/{session_id}", response_model=schemas.TarotSessionResponse)

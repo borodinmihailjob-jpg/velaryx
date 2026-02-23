@@ -13,6 +13,7 @@ from .llm_engine import (
     interpret_natal_premium_async,
     interpret_forecast_stories_async,
     interpret_numerology_async,
+    interpret_tarot_premium_async,
 )
 
 logger = logging.getLogger("astrobot.worker")
@@ -342,6 +343,41 @@ async def task_generate_natal_premium(
     return result
 
 
+async def task_generate_tarot_premium(
+    ctx: dict[str, Any],
+    *,
+    user_id: int,
+    question: str | None,
+    spread_type: str,
+    cards: list[dict[str, Any]],
+    created_at: str,
+) -> dict[str, Any]:
+    """Premium tarot via OpenRouter Gemini. Returns rich JSON report."""
+    job_id: str = ctx["job_id"]
+    redis = ctx["redis"]
+    logger.info("Worker: task_generate_tarot_premium start | user_id=%s | job_id=%s", user_id, job_id)
+
+    report = await interpret_tarot_premium_async(question=question, cards=cards)
+    if report:
+        logger.info("Worker: tarot premium LLM success | user_id=%s | job_id=%s", user_id, job_id)
+    else:
+        logger.error("Worker: tarot premium LLM failed | user_id=%s | job_id=%s", user_id, job_id)
+
+    result = {
+        "type": "tarot_premium",
+        "question": question,
+        "spread_type": spread_type,
+        "cards": cards,
+        "report": report,  # None if LLM failed
+        "created_at": created_at,
+    }
+    task_key = f"arq_task:{job_id}"
+    task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
+    await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+    logger.info("Worker: task_generate_tarot_premium done | user_id=%s | job_id=%s", user_id, job_id)
+    return result
+
+
 async def on_worker_startup(ctx: dict[str, Any]) -> None:
     logger.info("ARQ worker started")
 
@@ -351,7 +387,7 @@ async def on_worker_shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [task_generate_natal, task_generate_natal_premium, task_generate_stories, task_generate_numerology]
+    functions = [task_generate_natal, task_generate_natal_premium, task_generate_stories, task_generate_numerology, task_generate_tarot_premium]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_startup = on_worker_startup
     on_shutdown = on_worker_shutdown

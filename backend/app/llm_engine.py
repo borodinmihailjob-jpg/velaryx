@@ -269,6 +269,74 @@ def interpret_tarot_reading(question: str | None, cards: list[dict[str, Any]]) -
     return _request_llm_text(prompt=prompt, temperature=0.6, max_tokens=max_tokens)
 
 
+# ── Premium tarot (OpenRouter Gemini) ────────────────────────────────
+
+_PREMIUM_TAROT_SYSTEM_PROMPT = (
+    "Ты профессиональный таролог. Давай глубокую интерпретацию расклада на русском языке. "
+    "Отвечай ТОЛЬКО валидным JSON строго по заданной схеме. "
+    "Без markdown, без пояснений вне JSON, без дополнительных ключей."
+)
+
+_PREMIUM_TAROT_SCHEMA = (
+    '{\n'
+    '  "question_reflection": "string 50-70 слов — переосмысление вопроса, его суть и скрытый пласт",\n'
+    '  "card_analyses": [\n'
+    '    {\n'
+    '      "position_label": "слот расклада (напр. Прошлое / Настоящее / Будущее)",\n'
+    '      "card_name": "название карты",\n'
+    '      "orientation": "прямая или перевёрнутая",\n'
+    '      "deep_reading": "string 120-150 слов — глубокое прочтение карты в контексте вопроса"\n'
+    '    }\n'
+    '  ],\n'
+    '  "synthesis": "string 150-200 слов — общее послание: как карты связаны между собой",\n'
+    '  "key_themes": ["тема 1 (2-4 слова)", "тема 2", "тема 3"],\n'
+    '  "advice": "string 80-100 слов — практический совет: что делать, чего избегать",\n'
+    '  "energy": "string 40-60 слов — энергетика момента и лучшее время для действия"\n'
+    '}\n'
+    'card_analyses: ровно по одному объекту на каждую карту расклада. key_themes: ровно 3 элемента.'
+)
+
+_PREMIUM_TAROT_REQUIRED_KEYS = frozenset({
+    "question_reflection", "card_analyses", "synthesis", "key_themes", "advice", "energy",
+})
+
+
+async def interpret_tarot_premium_async(
+    *,
+    question: str | None,
+    cards: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Premium tarot interpretation via OpenRouter Gemini. Returns structured JSON or None."""
+    question_text = question.strip() if question and question.strip() else "Без уточняющего вопроса"
+    card_lines: list[str] = []
+    for card in sorted(cards, key=lambda c: int(c.get("position", 0) or 0)):
+        orientation = "перевёрнутая" if card.get("is_reversed") else "прямая"
+        slot = str(card.get("slot_label") or "").strip() or f"Позиция {card.get('position', '?')}"
+        name = str(card.get("card_name") or "").strip() or "Без названия"
+        meaning = str(card.get("meaning") or "").strip()
+        card_lines.append(f"Позиция «{slot}» | {name} ({orientation}) | {meaning}")
+
+    user_prompt = (
+        f"Вопрос: {question_text}\n\n"
+        f"Карты:\n" + "\n".join(card_lines) +
+        f"\n\nСхема ответа:\n{_PREMIUM_TAROT_SCHEMA}"
+    )
+
+    raw = await _request_openrouter_json_async(
+        system_prompt=_PREMIUM_TAROT_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=1800,
+        temperature=0.6,
+    )
+    if not raw or not _PREMIUM_TAROT_REQUIRED_KEYS.issubset(raw.keys()):
+        return None
+    if not isinstance(raw.get("card_analyses"), list) or not raw["card_analyses"]:
+        return None
+    if not isinstance(raw.get("key_themes"), list) or len(raw["key_themes"]) < 3:
+        return None
+    return raw
+
+
 def _normalize_story_animation(value: Any) -> str:
     raw = str(value or "").strip().lower()
     aliases = {

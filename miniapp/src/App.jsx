@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiRequest, pollTask, calculateNumerology, fetchNatalPremium } from './api';
+import { apiRequest, pollTask, calculateNumerology, fetchNatalPremium, fetchTarotPremium } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
@@ -115,6 +115,15 @@ const PREMIUM_NATAL_LOADING_HINTS = [
   'Рассчитываем ключевые темы всех сфер жизни...',
   'Формируем сильные стороны и персональные вызовы...',
   'Финальный штрих — рекомендации почти готовы...'
+];
+
+const PREMIUM_TAROT_LOADING_HINTS = [
+  'Gemini вглядывается в расклад карт...',
+  'Архетипы раскрываются в свете вашего вопроса...',
+  'Связь между картами становится всё яснее...',
+  'Синтезируем скрытые послания расклада...',
+  'Формируем практические рекомендации...',
+  'Финальный штрих — отчёт почти готов...'
 ];
 
 const LIFE_THEME_ICONS = { career: '💼', love: '❤️', finance: '💰', health: '🌿', growth: '🌱' };
@@ -2195,6 +2204,307 @@ function Tarot({ onBack }) {
   );
 }
 
+// ── Premium tarot: mode selector ─────────────────────────────────────
+
+function TarotModeSelect({ onBack, onBasic, onPremium }) {
+  const goldBorder = {
+    background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
+    border: '1px solid rgba(245,158,11,0.4)',
+    boxShadow: '0 0 24px rgba(245,158,11,0.10), inset 0 1px 0 rgba(245,158,11,0.15)',
+    borderRadius: 'var(--radius-xl)',
+    padding: 'var(--spacing-3)'
+  };
+  const featureList = { listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'flex', flexDirection: 'column', gap: 6 };
+  const featureItem = { fontSize: 14, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 };
+
+  return (
+    <Shell title="Таро-расклад" subtitle="Выберите формат расклада" onBack={onBack}>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+        {/* Basic option */}
+        <motion.div className="glass-card" variants={staggerItem} style={{ borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>🃏</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: 'var(--text-tertiary)', background: 'var(--glass-light)',
+              border: '1px solid var(--glass-medium)', borderRadius: 20, padding: '3px 10px'
+            }}>Бесплатно</span>
+          </div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Классический расклад</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>3 карты с интерпретацией от локальной AI-модели</p>
+          <ul style={featureList}>
+            {['Прошлое, настоящее, будущее', '3 карты с описаниями', 'Общая интерпретация', 'Локальная AI-модель'].map(f => (
+              <li key={f} style={featureItem}><span style={{ color: 'var(--text-tertiary)' }}>•</span>{f}</li>
+            ))}
+          </ul>
+          <motion.button className="ghost" onClick={onBasic} whileTap={{ scale: 0.97 }} style={{ width: '100%', marginTop: 16 }}>
+            Получить бесплатно →
+          </motion.button>
+        </motion.div>
+
+        {/* Premium option */}
+        <motion.div variants={staggerItem} style={goldBorder}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>✦</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: '#F59E0B', background: 'rgba(245,158,11,0.15)',
+              border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px'
+            }}>Премиум</span>
+          </div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Глубокий расклад</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>Детальный анализ каждой карты от Gemini Flash</p>
+          <ul style={featureList}>
+            {[
+              'Переосмысление вашего вопроса',
+              'Глубокое прочтение каждой карты',
+              'Синтез всего расклада',
+              'Ключевые темы и энергетика',
+              'Практический совет'
+            ].map(f => (
+              <li key={f} style={{ ...featureItem, color: 'rgba(245,245,245,0.75)' }}>
+                <span style={{ color: 'rgba(245,158,11,0.7)' }}>✦</span>{f}
+              </li>
+            ))}
+          </ul>
+          <motion.button
+            onClick={onPremium}
+            whileTap={{ scale: 0.97 }}
+            style={{
+              width: '100%', marginTop: 16, padding: '14px 0',
+              background: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
+              border: 'none', borderRadius: 'var(--radius-lg)', color: '#000',
+              fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em'
+            }}
+          >
+            Получить расклад ✦
+          </motion.button>
+        </motion.div>
+
+      </motion.div>
+    </Shell>
+  );
+}
+
+// ── Premium tarot: full report ────────────────────────────────────────
+
+function TarotPremium({ onBack }) {
+  const [question, setQuestion] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const [hintIndex, setHintIndex] = useState(0);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const id = setInterval(() => setHintIndex(p => (p + 1) % PREMIUM_TAROT_LOADING_HINTS.length), 2800);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  const draw = async () => {
+    setError('');
+    setResult(null);
+    setHintIndex(0);
+    setLoading(true);
+    try {
+      const data = await fetchTarotPremium('three_card', question);
+      if (!data?.report) {
+        setError('Не удалось сформировать отчёт. Попробуйте ещё раз.');
+      } else {
+        setResult(data);
+      }
+    } catch (e) {
+      setError(String(e?.message || e || 'Ошибка загрузки расклада.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const gold = '#F59E0B';
+  const goldBg = 'rgba(245,158,11,0.12)';
+  const goldBorder = 'rgba(245,158,11,0.35)';
+
+  const sectionTitle = (icon, text) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: gold }}>{text}</span>
+    </div>
+  );
+
+  const divider = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0' }}>
+      <div style={{ flex: 1, height: 1, background: `linear-gradient(to right, transparent, ${goldBorder})` }} />
+      <span style={{ color: gold, fontSize: 12 }}>✦</span>
+      <div style={{ flex: 1, height: 1, background: `linear-gradient(to left, transparent, ${goldBorder})` }} />
+    </div>
+  );
+
+  const report = result?.report;
+
+  return (
+    <Shell title="Глубокий расклад" subtitle="Детальный анализ от Gemini" onBack={onBack}>
+
+      {/* Input (shown when no result yet and not loading) */}
+      {!loading && !result && (
+        <div className="stack">
+          <label>
+            Ваш вопрос
+            <Hint text="Чем точнее формулировка, тем глубже прочтение" />
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Какой следующий шаг в отношениях/работе?"
+              disabled={loading}
+            />
+          </label>
+          {error && <p className="error" role="alert">{error}</p>}
+          <button className="cta" onClick={draw} disabled={loading}>
+            Сделать расклад ✦
+          </button>
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <motion.div className="natal-loader" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <div className="natal-loader-placeholder" style={{ fontSize: 32 }}>✦</div>
+          <p className="natal-loader-title" style={{ color: gold }}>Gemini читает карты...</p>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={hintIndex} className="natal-loader-hint"
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+            >
+              {PREMIUM_TAROT_LOADING_HINTS[hintIndex]}
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {/* Report */}
+      {report && (
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+          {/* Cards grid */}
+          {(result.cards || []).length > 0 && (
+            <motion.div variants={staggerItem}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 4 }}>
+                {result.cards.map((card, idx) => (
+                  <div key={idx} style={{ textAlign: 'center' }}>
+                    {card.image_url && (
+                      <img
+                        src={card.image_url}
+                        alt={card.card_name}
+                        className={`tarot-image ${card.is_reversed ? 'reversed' : ''}`}
+                        loading="lazy"
+                        style={{ width: '100%', borderRadius: 8, marginBottom: 4 }}
+                      />
+                    )}
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{card.slot_label}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: gold }}>{card.card_name}</div>
+                  </div>
+                ))}
+              </div>
+              {divider}
+            </motion.div>
+          )}
+
+          {/* Question reflection */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)',
+            padding: 'var(--spacing-3)', borderLeft: `3px solid ${gold}`
+          }}>
+            {sectionTitle('🔮', 'Суть вопроса')}
+            <p style={{ fontSize: 15, lineHeight: 1.75, color: 'rgba(255,255,255,0.88)', margin: 0 }}>
+              {report.question_reflection}
+            </p>
+          </motion.div>
+
+          {/* Card analyses */}
+          {(report.card_analyses || []).map((analysis, idx) => (
+            <motion.div key={idx} variants={staggerItem} style={{
+              background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: gold }}>{analysis.position_label}</span>
+                <span style={{
+                  fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--glass-medium)',
+                  borderRadius: 12, padding: '2px 8px'
+                }}>{analysis.orientation}</span>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{analysis.card_name}</div>
+              <p style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.82)', margin: 0 }}>
+                {analysis.deep_reading}
+              </p>
+            </motion.div>
+          ))}
+
+          {/* Synthesis */}
+          <motion.div variants={staggerItem} style={{
+            background: `linear-gradient(135deg, ${goldBg} 0%, rgba(15,15,20,0.9) 100%)`,
+            border: `1px solid ${goldBorder}`, borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('🌀', 'Общее послание')}
+            <p style={{ fontSize: 15, lineHeight: 1.75, color: 'rgba(255,255,255,0.88)', margin: 0 }}>
+              {report.synthesis}
+            </p>
+          </motion.div>
+
+          {/* Key themes */}
+          {(report.key_themes || []).length > 0 && (
+            <motion.div variants={staggerItem} style={{
+              background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+            }}>
+              {sectionTitle('🏷️', 'Ключевые темы')}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {report.key_themes.map((theme, i) => (
+                  <span key={i} style={{
+                    background: goldBg, border: `1px solid ${goldBorder}`,
+                    borderRadius: 20, padding: '5px 14px', fontSize: 13, fontWeight: 600, color: gold
+                  }}>{theme}</span>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Advice */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('💡', 'Практический совет')}
+            <p style={{ fontSize: 15, lineHeight: 1.75, color: 'rgba(255,255,255,0.88)', margin: 0 }}>
+              {report.advice}
+            </p>
+          </motion.div>
+
+          {/* Energy */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('⚡', 'Энергетика момента')}
+            <p style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.75)', margin: 0 }}>
+              {report.energy}
+            </p>
+          </motion.div>
+
+          {/* New reading button */}
+          <motion.div variants={staggerItem}>
+            <button className="ghost" style={{ width: '100%' }} onClick={() => {
+              setResult(null);
+              setQuestion('');
+              setError('');
+            }}>
+              Новый расклад
+            </button>
+          </motion.div>
+
+        </motion.div>
+      )}
+    </Shell>
+  );
+}
+
 export default function App() {
   const startParam = useStartParam();
   const [view, setView] = useState('dashboard');
@@ -2294,14 +2604,22 @@ export default function App() {
   if (view === 'natal') return <NatalChart onBack={() => setView('natal_mode_select')} onMissingProfile={resetToOnboarding} />;
   if (view === 'natal_premium') return <NatalPremiumReport onBack={() => setView('natal_mode_select')} onMissingProfile={resetToOnboarding} />;
   if (view === 'stories') return <Stories onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
-  if (view === 'tarot') return <Tarot onBack={() => setView('dashboard')} />;
+  if (view === 'tarot_mode_select') return (
+    <TarotModeSelect
+      onBack={() => setView('dashboard')}
+      onBasic={() => setView('tarot')}
+      onPremium={() => setView('tarot_premium')}
+    />
+  );
+  if (view === 'tarot') return <Tarot onBack={() => setView('tarot_mode_select')} />;
+  if (view === 'tarot_premium') return <TarotPremium onBack={() => setView('tarot_mode_select')} />;
   if (view === 'numerology') return <Numerology onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
 
   return (
     <Dashboard
       onOpenNatal={() => setView('natal_mode_select')}
       onOpenStories={() => setView('stories')}
-      onOpenTarot={() => setView('tarot')}
+      onOpenTarot={() => setView('tarot_mode_select')}
       onOpenNumerology={() => setView('numerology')}
       onEditBirthData={() => setView('profile_edit')}
       onDeleteProfile={deleteProfile}

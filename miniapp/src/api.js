@@ -155,6 +155,23 @@ export async function fetchNatalPremium() {
 }
 
 /**
+ * Request premium tarot reading via OpenRouter Gemini. Polls until complete.
+ * @param {string} spreadType - e.g. 'three_card'
+ * @param {string} question - user's question (may be empty)
+ * @returns {Promise<object>} - result with {type:"tarot_premium", cards, report, question, ...}
+ */
+export async function fetchTarotPremium(spreadType = 'three_card', question = '') {
+  const data = await apiRequest('/v1/tarot/premium', {
+    method: 'POST',
+    body: JSON.stringify({ spread_type: spreadType, question: question || null }),
+  });
+  if (data.status === 'pending') {
+    return await pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
+
+/**
  * Calculate all 6 numerology numbers and enqueue LLM interpretation.
  * @param {string} fullName - Full birth name (Cyrillic or Latin)
  * @param {string} birthDate - ISO date string "YYYY-MM-DD"
