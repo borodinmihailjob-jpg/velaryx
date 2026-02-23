@@ -143,6 +143,18 @@ export async function pollTask(taskId, intervalMs = 2000, timeoutMs = 120_000) {
 }
 
 /**
+ * Request premium natal chart via OpenRouter Gemini. Polls until complete.
+ * @returns {Promise<object>} - result with {type:"natal_premium", report:{...}, sun_sign, moon_sign, rising_sign}
+ */
+export async function fetchNatalPremium() {
+  const data = await apiRequest('/v1/natal/full/premium');
+  if (data.status === 'pending') {
+    return await pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
+
+/**
  * Calculate all 6 numerology numbers and enqueue LLM interpretation.
  * @param {string} fullName - Full birth name (Cyrillic or Latin)
  * @param {string} birthDate - ISO date string "YYYY-MM-DD"

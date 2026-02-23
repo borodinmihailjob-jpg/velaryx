@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Only "ollama" is supported by runtime.
     llm_provider: str = "ollama"
 
+    # OpenRouter (cloud LLM for premium features)
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "google/gemini-2.0-flash"
+    openrouter_timeout_seconds: float = 90.0
+
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()
         if not raw:

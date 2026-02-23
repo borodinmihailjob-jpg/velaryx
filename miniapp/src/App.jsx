@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiRequest, pollTask, calculateNumerology } from './api';
+import { apiRequest, pollTask, calculateNumerology, fetchNatalPremium } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
@@ -108,6 +108,25 @@ const NATAL_LOADING_HINTS = [
   'Тонкие аспекты уже сплетаются в единый узор...',
   'Ещё немного — послание карты почти готово...'
 ];
+
+const PREMIUM_NATAL_LOADING_HINTS = [
+  'Gemini изучает тонкие аспекты вашей карты...',
+  'Глубинный анализ Солнца, Луны и Асцендента...',
+  'Рассчитываем ключевые темы всех сфер жизни...',
+  'Формируем сильные стороны и персональные вызовы...',
+  'Финальный штрих — рекомендации почти готовы...'
+];
+
+const LIFE_THEME_ICONS = { career: '💼', love: '❤️', finance: '💰', health: '🌿', growth: '🌱' };
+const LIFE_THEME_LABELS = {
+  career: 'Карьера и призвание',
+  love: 'Отношения и любовь',
+  finance: 'Финансы и ресурсы',
+  health: 'Здоровье и тело',
+  growth: 'Личностный рост'
+};
+const CORE_ICONS = { sun: '☀️', moon: '🌙', rising: '↑' };
+const CORE_LABELS = { sun: 'Солнце', moon: 'Луна', rising: 'Асцендент' };
 const STORY_SLIDE_DURATION_MS = 7200;
 
 function storyCardMotion(animationType) {
@@ -1538,6 +1557,380 @@ function NatalChart({ onBack, onMissingProfile }) {
   );
 }
 
+// ── Premium natal: mode selector ────────────────────────────────────
+
+function NatalModeSelect({ onBack, onBasic, onPremium }) {
+  const goldBorder = {
+    background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
+    border: '1px solid rgba(245,158,11,0.4)',
+    boxShadow: '0 0 24px rgba(245,158,11,0.10), inset 0 1px 0 rgba(245,158,11,0.15)',
+    borderRadius: 'var(--radius-xl)',
+    padding: 'var(--spacing-3)'
+  };
+  const featureList = {
+    listStyle: 'none',
+    padding: 0,
+    margin: '8px 0 0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6
+  };
+  const featureItem = { fontSize: 14, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 };
+
+  return (
+    <Shell title="Натальная карта" subtitle="Выберите формат анализа" onBack={onBack}>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+        {/* Basic option */}
+        <motion.div className="glass-card" variants={staggerItem} style={{ borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>🌙</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: 'var(--text-tertiary)', background: 'var(--glass-light)',
+              border: '1px solid var(--glass-medium)', borderRadius: 20, padding: '3px 10px'
+            }}>Бесплатно</span>
+          </div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Базовая карта</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>Расчёт планет и интерпретации от локальной AI-модели</p>
+          <ul style={featureList}>
+            {['10 планет и домов', 'Ключевые аспекты', 'Базовые интерпретации', 'Локальная AI-модель'].map(f => (
+              <li key={f} style={featureItem}><span style={{ color: 'var(--text-tertiary)' }}>•</span>{f}</li>
+            ))}
+          </ul>
+          <motion.button
+            className="ghost"
+            onClick={onBasic}
+            whileTap={{ scale: 0.97 }}
+            style={{ width: '100%', marginTop: 16 }}
+          >
+            Получить бесплатно →
+          </motion.button>
+        </motion.div>
+
+        {/* Premium option */}
+        <motion.div variants={staggerItem} style={goldBorder}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>⭐</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: '#F59E0B', background: 'rgba(245,158,11,0.15)',
+              border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px'
+            }}>Премиум</span>
+          </div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Детальный отчёт</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>Глубокий персональный анализ от Gemini Flash</p>
+          <ul style={featureList}>
+            {[
+              'Анализ Солнца, Луны и Асцендента',
+              '5 сфер жизни: карьера, любовь, финансы...',
+              'Сильные стороны и вызовы',
+              'Топ-3 значимых аспекта',
+              'Персональные рекомендации'
+            ].map(f => (
+              <li key={f} style={{ ...featureItem, color: 'rgba(245,245,245,0.75)' }}>
+                <span style={{ color: 'rgba(245,158,11,0.7)' }}>✦</span>{f}
+              </li>
+            ))}
+          </ul>
+          <motion.button
+            onClick={onPremium}
+            whileTap={{ scale: 0.97 }}
+            style={{
+              width: '100%', marginTop: 16, padding: '14px 0',
+              background: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
+              border: 'none', borderRadius: 'var(--radius-lg)', color: '#000',
+              fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em'
+            }}
+          >
+            Получить отчёт ⭐
+          </motion.button>
+        </motion.div>
+
+      </motion.div>
+    </Shell>
+  );
+}
+
+// ── Premium natal: full report ───────────────────────────────────────
+
+function NatalPremiumReport({ onBack, onMissingProfile }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const [hintIndex, setHintIndex] = useState(0);
+  const [openCore, setOpenCore] = useState(null);
+  const [openTheme, setOpenTheme] = useState('career');
+
+  const loadReport = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setResult(null);
+    setHintIndex(0);
+    try {
+      const data = await fetchNatalPremium();
+      if (!data?.report) {
+        setError('Не удалось сформировать отчёт. Попробуйте ещё раз.');
+      } else {
+        setResult(data);
+      }
+    } catch (e) {
+      if (isMissingProfileError(e)) { onMissingProfile?.(); return; }
+      setError(String(e?.message || e || 'Ошибка загрузки отчёта.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [onMissingProfile]);
+
+  useEffect(() => { loadReport(); }, [loadReport]);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const id = setInterval(() => setHintIndex(p => (p + 1) % PREMIUM_NATAL_LOADING_HINTS.length), 2600);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  const report = result?.report;
+
+  // gold design tokens
+  const gold = '#F59E0B';
+  const goldBg = 'rgba(245,158,11,0.12)';
+  const goldBorder = 'rgba(245,158,11,0.35)';
+
+  const sectionTitle = (icon, text) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <span style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase',
+        color: gold
+      }}>{text}</span>
+    </div>
+  );
+
+  const divider = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0' }}>
+      <div style={{ flex: 1, height: 1, background: `linear-gradient(to right, transparent, ${goldBorder})` }} />
+      <span style={{ color: gold, fontSize: 12 }}>✦</span>
+      <div style={{ flex: 1, height: 1, background: `linear-gradient(to left, transparent, ${goldBorder})` }} />
+    </div>
+  );
+
+  return (
+    <Shell title="Детальный отчёт" subtitle="Персональный астрологический анализ" onBack={onBack}>
+
+      {/* Loading */}
+      {loading && (
+        <motion.div className="natal-loader" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <div className="natal-loader-placeholder" style={{ fontSize: 32 }}>⭐</div>
+          <p className="natal-loader-title" style={{ color: gold }}>Gemini анализирует карту...</p>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={hintIndex} className="natal-loader-hint"
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+            >
+              {PREMIUM_NATAL_LOADING_HINTS[hintIndex]}
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="stack" role="alert">
+          <p className="error">{error}</p>
+          <button className="ghost" onClick={loadReport}>Повторить</button>
+        </div>
+      )}
+
+      {/* Report */}
+      {report && (
+        <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+          {/* Header: sign chips */}
+          <motion.div variants={staggerItem}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+              {['sun', 'moon', 'rising'].map(k => (
+                <span key={k} style={{
+                  background: goldBg, border: `1px solid ${goldBorder}`,
+                  borderRadius: 20, padding: '4px 12px', fontSize: 13, fontWeight: 600, color: gold
+                }}>
+                  {CORE_ICONS[k]} {result[k === 'rising' ? 'rising_sign' : `${k}_sign`]}
+                </span>
+              ))}
+            </div>
+            {divider}
+          </motion.div>
+
+          {/* Overview */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)',
+            padding: 'var(--spacing-3)', borderLeft: `3px solid ${gold}`
+          }}>
+            {sectionTitle('📋', 'Общий портрет')}
+            <p style={{ fontSize: 16, lineHeight: 1.75, color: 'rgba(255,255,255,0.88)', margin: 0 }}>
+              {report.overview}
+            </p>
+          </motion.div>
+
+          {/* Core identity: Sun / Moon / Rising accordion */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('🔮', 'Ядро личности')}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['sun', 'moon', 'rising'].map(k => (
+                <button
+                  key={k}
+                  onClick={() => setOpenCore(openCore === k ? null : k)}
+                  style={{
+                    flex: 1, padding: '10px 6px', borderRadius: 12, cursor: 'pointer',
+                    background: openCore === k ? goldBg : 'var(--glass-medium)',
+                    border: `1px solid ${openCore === k ? goldBorder : 'transparent'}`,
+                    color: openCore === k ? gold : 'var(--text-secondary)',
+                    fontSize: 13, fontWeight: 600, transition: 'all 0.2s'
+                  }}
+                >
+                  {CORE_ICONS[k]}<br /><span style={{ fontSize: 11 }}>{CORE_LABELS[k]}</span>
+                </button>
+              ))}
+            </div>
+            <AnimatePresence mode="wait">
+              {openCore && (
+                <motion.p
+                  key={openCore}
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  style={{ margin: '12px 0 0', fontSize: 14, lineHeight: 1.65, color: 'rgba(255,255,255,0.82)',
+                    borderLeft: `2px solid ${gold}`, paddingLeft: 12, overflow: 'hidden' }}
+                >
+                  {report[`${openCore}_analysis`]}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </motion.div>
+
+          {/* Life themes accordion */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('🎯', 'Сферы жизни')}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {['career', 'love', 'finance', 'health', 'growth'].map(key => (
+                <div key={key}>
+                  <button
+                    onClick={() => setOpenTheme(openTheme === key ? null : key)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 12px', borderRadius: 10, cursor: 'pointer', border: 'none',
+                      background: openTheme === key ? goldBg : 'transparent',
+                      borderLeft: openTheme === key ? `2px solid ${gold}` : '2px solid transparent',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <span style={{ fontSize: 14, fontWeight: 600, color: openTheme === key ? gold : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {LIFE_THEME_ICONS[key]} {LIFE_THEME_LABELS[key]}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)', transform: openTheme === key ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                  </button>
+                  <AnimatePresence>
+                    {openTheme === key && (
+                      <motion.p
+                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.22 }}
+                        style={{ margin: 0, padding: '6px 12px 10px 24px', fontSize: 14, lineHeight: 1.65,
+                          color: 'rgba(255,255,255,0.78)', overflow: 'hidden' }}
+                      >
+                        {report[key]}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Strengths */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('✨', 'Сильные стороны')}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {(report.strengths || []).map((s, i) => (
+                <span key={i} style={{
+                  background: goldBg, border: `1px solid ${goldBorder}`,
+                  borderRadius: 20, padding: '5px 13px', fontSize: 13, color: gold, fontWeight: 500
+                }}>{s}</span>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Challenges */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('⚡', 'Вызовы и точки роста')}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {(report.challenges || []).map((c, i) => (
+                <span key={i} style={{
+                  background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: 20, padding: '5px 13px', fontSize: 13, color: '#FCA5A5', fontWeight: 500
+                }}>{c}</span>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Key aspects */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('🔭', 'Ключевые аспекты')}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(report.aspects || []).map((a, i) => (
+                <div key={i} style={{
+                  padding: '10px 12px', borderRadius: 10,
+                  background: 'var(--glass-medium)', borderLeft: `2px solid ${goldBorder}`
+                }}>
+                  <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: gold }}>{a.name}</p>
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'rgba(255,255,255,0.75)' }}>{a.meaning}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Recommendations */}
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('💡', 'Персональные рекомендации')}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(report.tips || []).map((t, i) => (
+                <div key={i} style={{
+                  padding: '10px 14px', borderRadius: 10,
+                  background: goldBg, border: `1px solid ${goldBorder}`
+                }}>
+                  <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em',
+                    textTransform: 'uppercase', color: gold }}>{t.area}</p>
+                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,0.82)' }}>{t.tip}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Footer */}
+          <motion.div variants={staggerItem}>
+            {divider}
+            <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)', margin: '4px 0 0' }}>
+              Отчёт сгенерирован AI-астрологом · Gemini Flash · OpenRouter
+            </p>
+          </motion.div>
+
+        </motion.div>
+      )}
+    </Shell>
+  );
+}
+
 function Stories({ onBack, onMissingProfile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1891,14 +2284,22 @@ export default function App() {
     );
   }
 
-  if (view === 'natal') return <NatalChart onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
+  if (view === 'natal_mode_select') return (
+    <NatalModeSelect
+      onBack={() => setView('dashboard')}
+      onBasic={() => setView('natal')}
+      onPremium={() => setView('natal_premium')}
+    />
+  );
+  if (view === 'natal') return <NatalChart onBack={() => setView('natal_mode_select')} onMissingProfile={resetToOnboarding} />;
+  if (view === 'natal_premium') return <NatalPremiumReport onBack={() => setView('natal_mode_select')} onMissingProfile={resetToOnboarding} />;
   if (view === 'stories') return <Stories onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
   if (view === 'tarot') return <Tarot onBack={() => setView('dashboard')} />;
   if (view === 'numerology') return <Numerology onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
 
   return (
     <Dashboard
-      onOpenNatal={() => setView('natal')}
+      onOpenNatal={() => setView('natal_mode_select')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot')}
       onOpenNumerology={() => setView('numerology')}

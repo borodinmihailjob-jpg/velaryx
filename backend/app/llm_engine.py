@@ -25,6 +25,17 @@ def _get_async_client() -> httpx.AsyncClient:
     return _async_client
 
 
+# Shared async HTTP client for OpenRouter
+_openrouter_client: httpx.AsyncClient | None = None
+
+
+def _get_openrouter_client() -> httpx.AsyncClient:
+    global _openrouter_client
+    if _openrouter_client is None or _openrouter_client.is_closed:
+        _openrouter_client = httpx.AsyncClient(timeout=settings.openrouter_timeout_seconds)
+    return _openrouter_client
+
+
 def _sanitize_user_input(text: str, max_length: int = 500) -> str:
     """Strip control characters and cap length before injecting into LLM prompts."""
     text = _CONTROL_CHARS_RE.sub("", text)
@@ -59,6 +70,8 @@ def _request_ollama_text(prompt: str, temperature: float, max_tokens: int) -> st
         "model": model,
         "prompt": f"{INSTRUCTION_PREFIX}\n\n{prompt}",
         "stream": False,
+        # Disable "thinking" mode for models like qwen3 to ensure text lands in `response`.
+        "think": False,
         "options": {
             "temperature": temperature,
             "num_predict": max_tokens,
@@ -104,6 +117,8 @@ async def _request_ollama_text_async(prompt: str, temperature: float, max_tokens
         "model": model,
         "prompt": f"{INSTRUCTION_PREFIX}\n\n{prompt}",
         "stream": False,
+        # Disable "thinking" mode for models like qwen3 to ensure text lands in `response`.
+        "think": False,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     try:
@@ -641,6 +656,162 @@ async def interpret_numerology_async(
             result[key] = value.strip()
 
     return result if len(result) >= 4 else None
+
+
+# ── OpenRouter (cloud LLM, premium features) ────────────────────────
+
+async def _request_openrouter_json_async(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    temperature: float,
+) -> dict[str, Any] | None:
+    """Call OpenRouter chat completions with JSON response format.
+
+    Returns parsed JSON dict or None on any error.
+    """
+    if not settings.openrouter_api_key:
+        logger.error("OpenRouter API key not configured")
+        return None
+
+    url = f"{settings.openrouter_base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.openrouter_model,
+        "response_format": {"type": "json_object"},
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    try:
+        started_at = time.time()
+        client = _get_openrouter_client()
+        resp = await client.post(url, json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        elapsed = time.time() - started_at
+        logger.info("OpenRouter success | model=%s | time=%.2fs", settings.openrouter_model, elapsed)
+        return _extract_json_dict(text)
+    except httpx.ReadTimeout:
+        logger.error("OpenRouter timeout after %.0fs | model=%s", settings.openrouter_timeout_seconds, settings.openrouter_model)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else -1
+        body = exc.response.text[:300] if exc.response is not None else ""
+        logger.error("OpenRouter HTTP error | status=%s | body=%s", status, body)
+    except Exception as exc:
+        logger.error("OpenRouter request failed: %s", exc)
+    return None
+
+
+_PREMIUM_NATAL_SYSTEM_PROMPT = (
+    "Ты профессиональный астролог. Давай глубокий точный анализ натальной карты на русском языке. "
+    "Отвечай ТОЛЬКО валидным JSON строго по заданной схеме. "
+    "Без markdown, без пояснений вне JSON, без дополнительных ключей."
+)
+
+_PREMIUM_NATAL_SCHEMA = (
+    '{\n'
+    '  "overview": "string 90-110 слов — общий портрет личности",\n'
+    '  "sun_analysis": "string 60-70 слов — Солнце: суть, мотивация, самовыражение",\n'
+    '  "moon_analysis": "string 60-70 слов — Луна: эмоции, потребности, привычки",\n'
+    '  "rising_analysis": "string 60-70 слов — Асцендент: маска, первое впечатление, тело",\n'
+    '  "career": "string 60-70 слов — карьера, призвание, реализация",\n'
+    '  "love": "string 60-70 слов — отношения, партнёрство, любовь",\n'
+    '  "finance": "string 50-60 слов — деньги, ресурсы, материальный мир",\n'
+    '  "health": "string 50-60 слов — здоровье, тело, энергия",\n'
+    '  "growth": "string 50-60 слов — личностный рост, вызов, трансформация",\n'
+    '  "strengths": ["строка 5-8 слов", "строка", "строка", "строка", "строка", "строка"],\n'
+    '  "challenges": ["строка 5-8 слов", "строка", "строка", "строка"],\n'
+    '  "aspects": [{"name": "краткое название аспекта", "meaning": "string 40-50 слов"}],\n'
+    '  "tips": [{"area": "сфера (1-2 слова)", "tip": "string 25-35 слов"}]\n'
+    '}\n'
+    'aspects: топ-3 ключевых аспекта из карты. tips: ровно 3 элемента (работа, отношения, рост).'
+)
+
+_PREMIUM_NATAL_REQUIRED_KEYS = frozenset({
+    "overview", "sun_analysis", "moon_analysis", "rising_analysis",
+    "career", "love", "finance", "health", "growth",
+    "strengths", "challenges", "aspects", "tips",
+})
+
+
+async def interpret_natal_premium_async(
+    *,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+    natal_summary: str,
+    key_aspects: list[str],
+    planetary_profile: list[str],
+    house_cusps: list[str],
+    planets_in_houses: list[str],
+    mc_line: str,
+    nodes_line: str,
+    house_rulers: list[str],
+    dispositors: list[str],
+    essential_dignities: list[str],
+    configurations: list[str],
+    full_aspects: list[str],
+) -> dict[str, Any] | None:
+    """Generate premium natal chart report via OpenRouter Gemini.
+
+    Returns a validated dict with 13 keys matching _PREMIUM_NATAL_REQUIRED_KEYS,
+    or None if the API call fails or returns an incomplete response.
+    """
+    safe_summary = _sanitize_user_input(natal_summary, max_length=600) if natal_summary else ""
+
+    natal_block = (
+        f"Солнце: {sun_sign}\n"
+        f"Луна: {moon_sign}\n"
+        f"Асцендент: {rising_sign}\n\n"
+        f"Краткий контекст карты: {safe_summary or 'Нет данных'}\n\n"
+        "Ключевые аспекты:\n"
+        f"{chr(10).join(key_aspects[:6]) if key_aspects else 'Нет данных'}\n\n"
+        "Планетный профиль:\n"
+        f"{chr(10).join(planetary_profile[:6]) if planetary_profile else 'Нет данных'}\n\n"
+        "Планеты в домах:\n"
+        f"{chr(10).join(planets_in_houses[:8]) if planets_in_houses else 'Нет данных'}\n\n"
+        "MC: "
+        f"{mc_line or 'Нет данных'}\n"
+        "Лунные узлы: "
+        f"{nodes_line or 'Нет данных'}\n\n"
+        "Конфигурации: "
+        f"{chr(10).join(configurations[:3]) if configurations else 'Нет данных'}"
+    )
+
+    user_prompt = f"{natal_block}\n\nВерни JSON строго по этой схеме (все значения на русском):\n{_PREMIUM_NATAL_SCHEMA}"
+
+    result = await _request_openrouter_json_async(
+        system_prompt=_PREMIUM_NATAL_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=2000,
+        temperature=0.5,
+    )
+
+    if not result:
+        return None
+
+    if not _PREMIUM_NATAL_REQUIRED_KEYS.issubset(result.keys()):
+        missing = _PREMIUM_NATAL_REQUIRED_KEYS - result.keys()
+        logger.error("OpenRouter premium natal: missing keys %s", missing)
+        return None
+
+    # Ensure aspects and tips are non-empty lists
+    if not isinstance(result.get("aspects"), list) or not result["aspects"]:
+        logger.error("OpenRouter premium natal: aspects is empty or not a list")
+        return None
+    if not isinstance(result.get("tips"), list) or not result["tips"]:
+        logger.error("OpenRouter premium natal: tips is empty or not a list")
+        return None
+
+    return result
 
 
 async def interpret_forecast_stories_async(

@@ -10,6 +10,7 @@ from arq.connections import RedisSettings
 from .config import settings
 from .llm_engine import (
     interpret_natal_sections_async,
+    interpret_natal_premium_async,
     interpret_forecast_stories_async,
     interpret_numerology_async,
 )
@@ -271,6 +272,76 @@ async def task_generate_numerology(
     return result
 
 
+async def task_generate_natal_premium(
+    ctx: dict[str, Any],
+    *,
+    user_id: int,
+    chart_id: str,
+    profile_id: str,
+    sun_sign: str,
+    moon_sign: str,
+    rising_sign: str,
+    wheel_chart_url: str | None,
+    created_at: str,
+    natal_summary: str,
+    key_aspects: list[str],
+    planetary_profile: list[str],
+    house_cusps: list[str],
+    planets_in_houses: list[str],
+    mc_line: str,
+    nodes_line: str,
+    house_rulers: list[str],
+    dispositors: list[str],
+    essential_dignities: list[str],
+    configurations: list[str],
+    full_aspects: list[str],
+) -> dict[str, Any]:
+    """Premium natal chart via OpenRouter Gemini. Returns rich JSON report."""
+    job_id: str = ctx["job_id"]
+    redis = ctx["redis"]
+
+    logger.info("Worker: task_generate_natal_premium start | user_id=%s | job_id=%s", user_id, job_id)
+
+    report = await interpret_natal_premium_async(
+        sun_sign=sun_sign,
+        moon_sign=moon_sign,
+        rising_sign=rising_sign,
+        natal_summary=natal_summary,
+        key_aspects=key_aspects,
+        planetary_profile=planetary_profile,
+        house_cusps=house_cusps,
+        planets_in_houses=planets_in_houses,
+        mc_line=mc_line,
+        nodes_line=nodes_line,
+        house_rulers=house_rulers,
+        dispositors=dispositors,
+        essential_dignities=essential_dignities,
+        configurations=configurations,
+        full_aspects=full_aspects,
+    )
+
+    if report:
+        logger.info("Worker: natal premium LLM success | user_id=%s | job_id=%s", user_id, job_id)
+    else:
+        logger.error("Worker: natal premium LLM failed | user_id=%s | job_id=%s", user_id, job_id)
+
+    result = {
+        "type": "natal_premium",
+        "sun_sign": sun_sign,
+        "moon_sign": moon_sign,
+        "rising_sign": rising_sign,
+        "report": report,  # None if LLM failed
+        "wheel_chart_url": wheel_chart_url,
+        "created_at": created_at,
+    }
+
+    task_key = f"arq_task:{job_id}"
+    task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
+    await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+    logger.info("Worker: task_generate_natal_premium done | user_id=%s | job_id=%s", user_id, job_id)
+    return result
+
+
 async def on_worker_startup(ctx: dict[str, Any]) -> None:
     logger.info("ARQ worker started")
 
@@ -280,7 +351,7 @@ async def on_worker_shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [task_generate_natal, task_generate_stories, task_generate_numerology]
+    functions = [task_generate_natal, task_generate_natal_premium, task_generate_stories, task_generate_numerology]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_startup = on_worker_startup
     on_shutdown = on_worker_shutdown
