@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # OpenRouter (cloud LLM for premium features)
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "google/gemini-2.0-flash"
+    openrouter_model: str = "google/gemini-2.0-flash-001"
     openrouter_timeout_seconds: float = 90.0
 
     def cors_origins(self) -> list[str]:

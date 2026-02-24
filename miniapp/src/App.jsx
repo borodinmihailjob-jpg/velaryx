@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useLaunchParams } from '@telegram-apps/sdk-react';
 
-import { apiRequest, pollTask, calculateNumerology, fetchNatalPremium, fetchTarotPremium } from './api';
+import { apiRequest, pollTask, calculateNumerology, fetchNatalPremium, fetchTarotPremium, fetchNumerologyPremium } from './api';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
@@ -126,6 +125,14 @@ const PREMIUM_TAROT_LOADING_HINTS = [
   'Финальный штрих — отчёт почти готов...'
 ];
 
+const PREMIUM_NUMEROLOGY_LOADING_HINTS = [
+  'Gemini изучает ваш нумерологический код...',
+  'Анализируем взаимодействие чисел судьбы...',
+  'Раскрываем глубинные смыслы каждого числа...',
+  'Формируем персональный нумерологический портрет...',
+  'Финальный штрих — отчёт почти готов...'
+];
+
 const LIFE_THEME_ICONS = { career: '💼', love: '❤️', finance: '💰', health: '🌿', growth: '🌱' };
 const LIFE_THEME_LABELS = {
   career: 'Карьера и призвание',
@@ -175,7 +182,7 @@ function toNumber(value) {
 
 function timezoneLabel(timezone) {
   if (!timezone) return 'UTC';
-  return TZ_LABELS[timezone] || timezone.replaceAll('_', ' ');
+  return TZ_LABELS[timezone] || timezone.replace(/_/g, ' ');
 }
 
 function browserTimezone() {
@@ -231,28 +238,22 @@ function shareLink(url, text) {
 }
 
 function useStartParam() {
-  // Hook must be called unconditionally at the top level (Rules of Hooks)
-  const launchParams = useLaunchParams();
-  let sdkStartParam = null;
-  try {
-    sdkStartParam = launchParams?.startParam ?? null;
-  } catch {
-    sdkStartParam = null;
-  }
-
-  const fromQuery = new URLSearchParams(window.location.search).get('startapp');
+  // Read start param directly from Telegram WebApp API and URL query.
+  // Avoids using @telegram-apps/sdk-react hooks which throw when the SDK
+  // cannot initialize (mobile Safari, non-Telegram browsers, iOS WKWebView edge cases).
   const fromUnsafe = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-  return sdkStartParam || fromUnsafe || fromQuery || null;
+  const fromQuery = new URLSearchParams(window.location.search).get('startapp');
+  return fromUnsafe || fromQuery || null;
 }
 
 function startParamToView(startParam) {
   if (!startParam) return null;
   const mapping = {
     sc_onboarding: 'onboarding',
-    sc_natal: 'natal',
+    sc_natal: 'natal_mode_select',
     sc_stories: 'stories',
-    sc_tarot: 'tarot',
-    sc_numerology: 'numerology'
+    sc_tarot: 'tarot_mode_select',
+    sc_numerology: 'numerology_mode_select'
   };
   return mapping[startParam] || null;
 }
@@ -1247,6 +1248,342 @@ function Numerology({ onBack, onMissingProfile }) {
         >
           Рассчитать заново
         </motion.button>
+      </motion.div>
+    </Shell>
+  );
+}
+
+// ── Premium numerology: mode selector ────────────────────────────────
+
+function NumerologyModeSelect({ onBack, onBasic, onPremium }) {
+  const goldBorder = {
+    background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
+    border: '1px solid rgba(245,158,11,0.4)',
+    boxShadow: '0 0 24px rgba(245,158,11,0.10), inset 0 1px 0 rgba(245,158,11,0.15)',
+    borderRadius: 'var(--radius-xl)',
+    padding: 'var(--spacing-3)'
+  };
+  const featureList = { listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'flex', flexDirection: 'column', gap: 6 };
+  const featureItem = { fontSize: 14, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 };
+
+  return (
+    <Shell title="Нумерология" subtitle="Выберите формат анализа" onBack={onBack}>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+        {/* Basic option */}
+        <motion.div className="glass-card" variants={staggerItem} style={{ borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>🔢</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: 'var(--text-tertiary)', background: 'var(--glass-light)',
+              border: '1px solid var(--glass-medium)', borderRadius: 20, padding: '3px 10px'
+            }}>Бесплатно</span>
+          </div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Базовый расчёт</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>6 ключевых чисел с интерпретацией от локальной модели</p>
+          <ul style={featureList}>
+            {['Число жизненного пути', 'Число выражения и души', 'Число личности и дня рождения', 'Число личного года'].map(f => (
+              <li key={f} style={featureItem}><span style={{ color: 'var(--text-tertiary)' }}>•</span>{f}</li>
+            ))}
+          </ul>
+          <motion.button className="ghost" onClick={onBasic} whileTap={{ scale: 0.97 }} style={{ width: '100%', marginTop: 16 }}>
+            Рассчитать бесплатно →
+          </motion.button>
+        </motion.div>
+
+        {/* Premium option */}
+        <motion.div variants={staggerItem} style={goldBorder}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>✦</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: '#F59E0B', background: 'rgba(245,158,11,0.15)',
+              border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '3px 10px'
+            }}>Премиум</span>
+          </div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Глубокий анализ</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>Детальный разбор каждого числа от Gemini Flash</p>
+          <ul style={featureList}>
+            {[
+              'Глубокий разбор каждого из 6 чисел',
+              'Общий нумерологический портрет',
+              'Сильные стороны и зоны роста',
+              'Вызовы и практические советы',
+              'Персональный план по 4 сферам жизни'
+            ].map(f => (
+              <li key={f} style={{ ...featureItem, color: 'rgba(245,245,245,0.75)' }}>
+                <span style={{ color: 'rgba(245,158,11,0.7)' }}>✦</span>{f}
+              </li>
+            ))}
+          </ul>
+          <motion.button
+            onClick={onPremium}
+            whileTap={{ scale: 0.97 }}
+            style={{
+              width: '100%', marginTop: 16, padding: '14px 0',
+              background: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
+              border: 'none', borderRadius: 'var(--radius-lg)', color: '#000',
+              fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em'
+            }}
+          >
+            Получить анализ ✦
+          </motion.button>
+        </motion.div>
+
+      </motion.div>
+    </Shell>
+  );
+}
+
+// ── Premium numerology: full report ──────────────────────────────────
+
+const _PREMIUM_NUM_KEYS = [
+  { key: 'life_path_deep',    numKey: 'life_path',    label: 'Жизненный Путь',  icon: '🌟' },
+  { key: 'expression_deep',   numKey: 'expression',   label: 'Выражение',       icon: '✨' },
+  { key: 'soul_urge_deep',    numKey: 'soul_urge',    label: 'Душа',            icon: '💫' },
+  { key: 'personality_deep',  numKey: 'personality',  label: 'Личность',        icon: '🎭' },
+  { key: 'birthday_deep',     numKey: 'birthday',     label: 'День Рождения',   icon: '🎂' },
+  { key: 'personal_year_deep',numKey: 'personal_year',label: 'Личный Год',      icon: '🗓️' },
+];
+
+function NumerologyPremiumReport({ onBack, onMissingProfile }) {
+  const [nameInput, setNameInput] = useState('');
+  const [birthDateInput, setBirthDateInput] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const [hintIndex, setHintIndex] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest('/v1/natal/profile/latest')
+      .then((profile) => { if (active && profile?.birth_date) setBirthDateInput(String(profile.birth_date)); })
+      .catch(() => {})
+      .finally(() => { if (active) setProfileLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const id = setInterval(() => setHintIndex(p => (p + 1) % PREMIUM_NUMEROLOGY_LOADING_HINTS.length), 2600);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  const canSubmit = nameInput.trim().length >= 2 && birthDateInput.length === 10;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setError('');
+    setResult(null);
+    setHintIndex(0);
+    setLoading(true);
+    try {
+      const data = await fetchNumerologyPremium(nameInput.trim(), birthDateInput);
+      if (!data?.report) {
+        setError('Не удалось сформировать отчёт. Попробуйте ещё раз.');
+      } else {
+        setResult(data);
+      }
+    } catch (e) {
+      if (isMissingProfileError(e)) { onMissingProfile?.(); return; }
+      setError(String(e?.message || e || 'Ошибка загрузки отчёта.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const gold = '#F59E0B';
+  const goldBg = 'rgba(245,158,11,0.12)';
+  const goldBorder = 'rgba(245,158,11,0.35)';
+
+  const sectionTitle = (icon, text) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: gold }}>{text}</span>
+    </div>
+  );
+
+  const report = result?.report;
+  const numbers = result?.numbers;
+
+  if (!loading && !result) {
+    return (
+      <Shell title="Глубокий анализ" subtitle="Нумерология от Gemini" onBack={onBack}>
+        <div className="stack">
+          <label>
+            Полное имя при рождении
+            <Hint text="Имя, фамилия и отчество (при наличии) как в документах" />
+            <input
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="Иванов Иван Иванович"
+              autoComplete="name"
+            />
+            <span className="input-hint">Кириллица или латиница</span>
+          </label>
+          <label>
+            Дата рождения
+            <Hint text="Если дата загружена из профиля, при необходимости исправьте" />
+            {profileLoading ? (
+              <span className="input-hint">Загружаем из профиля...</span>
+            ) : (
+              <input
+                type="date"
+                value={birthDateInput}
+                onChange={(e) => setBirthDateInput(e.target.value)}
+              />
+            )}
+          </label>
+          {error && <p className="error" role="alert">{error}</p>}
+          <button className="cta" onClick={handleSubmit} disabled={!canSubmit}>
+            Получить анализ ✦
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Shell title="Глубокий анализ" subtitle="Нумерология от Gemini" onBack={onBack}>
+        <motion.div className="natal-loader" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <div className="natal-loader-placeholder" style={{ fontSize: 32 }}>✦</div>
+          <p className="natal-loader-title" style={{ color: gold }}>Gemini анализирует числа...</p>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={hintIndex} className="natal-loader-hint"
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+            >
+              {PREMIUM_NUMEROLOGY_LOADING_HINTS[hintIndex]}
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell title="Глубокий анализ" subtitle="Нумерология от Gemini" onBack={onBack}>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+        {/* Numbers grid */}
+        {numbers && (
+          <motion.div variants={staggerItem} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {NUMEROLOGY_ORDER.map(key => {
+              const val = numbers[key];
+              const gradient = NUMEROLOGY_GRADIENTS[val] || NUMEROLOGY_GRADIENTS[9];
+              return (
+                <div key={key} style={{ textAlign: 'center', background: 'var(--glass-light)', borderRadius: 12, padding: '10px 6px' }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: '50%', background: gradient,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 4px', fontSize: 16, fontWeight: 700, color: '#000'
+                  }}>{val}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.3 }}>
+                    {NUMEROLOGY_LABELS[key]?.split(' ').slice(-1)[0]}
+                  </div>
+                </div>
+              );
+            })}
+          </motion.div>
+        )}
+
+        {/* Deep interpretation per number */}
+        {_PREMIUM_NUM_KEYS.map(({ key, numKey, label, icon }) => {
+          const val = numbers?.[numKey];
+          const text = report?.[key];
+          if (!text) return null;
+          return (
+            <motion.div key={key} variants={staggerItem} style={{
+              background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>{icon}</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: gold }}>{label}</div>
+                  {val !== undefined && (
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                      {val} · {NUMEROLOGY_ARCHETYPES[val] || ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.82)', margin: 0 }}>{text}</p>
+            </motion.div>
+          );
+        })}
+
+        {/* Synthesis */}
+        {report?.synthesis && (
+          <motion.div variants={staggerItem} style={{
+            background: `linear-gradient(135deg, ${goldBg} 0%, rgba(15,15,20,0.9) 100%)`,
+            border: `1px solid ${goldBorder}`, borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('🌀', 'Нумерологический портрет')}
+            <p style={{ fontSize: 15, lineHeight: 1.75, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{report.synthesis}</p>
+          </motion.div>
+        )}
+
+        {/* Strengths */}
+        {(report?.strengths || []).length > 0 && (
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('💪', 'Сильные стороны')}
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {report.strengths.map((s, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: 'rgba(255,255,255,0.82)' }}>
+                  <span style={{ color: gold, flexShrink: 0 }}>✦</span>{s}
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+
+        {/* Challenges */}
+        {(report?.challenges || []).length > 0 && (
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('🔥', 'Вызовы и зоны роста')}
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {report.challenges.map((c, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: 'rgba(255,255,255,0.82)' }}>
+                  <span style={{ color: 'rgba(245,158,11,0.6)', flexShrink: 0 }}>△</span>{c}
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+
+        {/* Advice */}
+        {(report?.advice || []).length > 0 && (
+          <motion.div variants={staggerItem} style={{
+            background: 'var(--glass-light)', borderRadius: 'var(--radius-xl)', padding: 'var(--spacing-3)'
+          }}>
+            {sectionTitle('💡', 'Практические советы')}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {report.advice.map((a, i) => (
+                <div key={i}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: gold, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                    {a.area}
+                  </div>
+                  <p style={{ fontSize: 14, lineHeight: 1.65, color: 'rgba(255,255,255,0.82)', margin: 0 }}>{a.tip}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        <motion.div variants={staggerItem}>
+          <button className="ghost" style={{ width: '100%' }} onClick={() => { setResult(null); setError(''); }}>
+            Новый анализ
+          </button>
+        </motion.div>
+
       </motion.div>
     </Shell>
   );
@@ -2613,14 +2950,22 @@ export default function App() {
   );
   if (view === 'tarot') return <Tarot onBack={() => setView('tarot_mode_select')} />;
   if (view === 'tarot_premium') return <TarotPremium onBack={() => setView('tarot_mode_select')} />;
-  if (view === 'numerology') return <Numerology onBack={() => setView('dashboard')} onMissingProfile={resetToOnboarding} />;
+  if (view === 'numerology_mode_select') return (
+    <NumerologyModeSelect
+      onBack={() => setView('dashboard')}
+      onBasic={() => setView('numerology')}
+      onPremium={() => setView('numerology_premium')}
+    />
+  );
+  if (view === 'numerology') return <Numerology onBack={() => setView('numerology_mode_select')} onMissingProfile={resetToOnboarding} />;
+  if (view === 'numerology_premium') return <NumerologyPremiumReport onBack={() => setView('numerology_mode_select')} onMissingProfile={resetToOnboarding} />;
 
   return (
     <Dashboard
       onOpenNatal={() => setView('natal_mode_select')}
       onOpenStories={() => setView('stories')}
       onOpenTarot={() => setView('tarot_mode_select')}
-      onOpenNumerology={() => setView('numerology')}
+      onOpenNumerology={() => setView('numerology_mode_select')}
       onEditBirthData={() => setView('profile_edit')}
       onDeleteProfile={deleteProfile}
       deletingProfile={deletingProfile}

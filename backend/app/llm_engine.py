@@ -882,6 +882,105 @@ async def interpret_natal_premium_async(
     return result
 
 
+_PREMIUM_NUMEROLOGY_SYSTEM_PROMPT = (
+    "Ты профессиональный нумеролог с глубоким знанием Пифагорейской нумерологии. "
+    "Давай глубокую персональную интерпретацию на русском языке. "
+    "Отвечай ТОЛЬКО валидным JSON строго по заданной схеме. "
+    "Без markdown, без пояснений вне JSON, без дополнительных ключей."
+)
+
+_PREMIUM_NUMEROLOGY_SCHEMA = (
+    '{\n'
+    '  "life_path_deep": "string 150-200 слов — глубокий анализ числа жизненного пути: суть, предназначение, ключевые уроки, кармические задачи",\n'
+    '  "expression_deep": "string 100-130 слов — число выражения: таланты, профессиональный потенциал, путь реализации",\n'
+    '  "soul_urge_deep": "string 100-130 слов — число души: истинные желания, внутренняя мотивация, что приносит настоящее удовлетворение",\n'
+    '  "personality_deep": "string 80-100 слов — число личности: как вас воспринимают, стиль общения, имидж",\n'
+    '  "birthday_deep": "string 70-90 слов — число дня рождения: особый дар, специфический талант",\n'
+    '  "personal_year_deep": "string 100-120 слов — число личного года: тема цикла, на что делать упор, что отпустить",\n'
+    '  "synthesis": "string 150-200 слов — как все числа взаимодействуют: общий нумерологический портрет и ключевая тема жизни",\n'
+    '  "strengths": ["строка 5-8 слов", "строка", "строка", "строка", "строка"],\n'
+    '  "challenges": ["строка 5-8 слов", "строка", "строка"],\n'
+    '  "advice": [{"area": "сфера (1-2 слова)", "tip": "string 40-50 слов"}]\n'
+    '}\n'
+    'strengths: ровно 5 элементов. challenges: ровно 3 элемента. advice: ровно 4 элемента (карьера, отношения, финансы, духовный рост).'
+)
+
+_PREMIUM_NUMEROLOGY_REQUIRED_KEYS = frozenset({
+    "life_path_deep", "expression_deep", "soul_urge_deep", "personality_deep",
+    "birthday_deep", "personal_year_deep", "synthesis", "strengths", "challenges", "advice",
+})
+
+
+async def interpret_numerology_premium_async(
+    *,
+    full_name: str,
+    birth_date: str,
+    life_path: int,
+    expression: int,
+    soul_urge: int,
+    personality: int,
+    birthday: int,
+    personal_year: int,
+) -> dict[str, Any] | None:
+    """Generate premium numerology report via OpenRouter Gemini.
+
+    Returns a validated dict with 10 keys matching _PREMIUM_NUMEROLOGY_REQUIRED_KEYS,
+    or None if the API call fails or returns an incomplete response.
+    """
+    safe_name = _sanitize_user_input(full_name, max_length=200)
+
+    def _arch(n: int) -> str:
+        return _NUMEROLOGY_ARCHETYPES.get(n, "")
+
+    master_nums = [n for n in (life_path, expression, soul_urge, personality, birthday, personal_year)
+                   if n in {11, 22, 33}]
+    master_note = (
+        f"МАСТЕР-ЧИСЛА в профиле: {', '.join(str(n) for n in master_nums)} — "
+        "обязательно укажи их усиленный потенциал и повышенную ответственность.\n"
+        if master_nums else ""
+    )
+
+    user_prompt = (
+        f"Имя: {safe_name}\n"
+        f"Дата рождения: {birth_date}\n\n"
+        f"{master_note}"
+        f"Число Жизненного Пути: {life_path} ({_arch(life_path)})\n"
+        f"Число Выражения (Судьбы): {expression} ({_arch(expression)})\n"
+        f"Число Души: {soul_urge} ({_arch(soul_urge)})\n"
+        f"Число Личности: {personality} ({_arch(personality)})\n"
+        f"Число Дня Рождения: {birthday} ({_arch(birthday)})\n"
+        f"Число Личного Года: {personal_year} ({_arch(personal_year)})\n\n"
+        f"Верни JSON строго по этой схеме (все значения на русском):\n{_PREMIUM_NUMEROLOGY_SCHEMA}"
+    )
+
+    result = await _request_openrouter_json_async(
+        system_prompt=_PREMIUM_NUMEROLOGY_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=2200,
+        temperature=0.55,
+    )
+
+    if not result:
+        return None
+
+    if not _PREMIUM_NUMEROLOGY_REQUIRED_KEYS.issubset(result.keys()):
+        missing = _PREMIUM_NUMEROLOGY_REQUIRED_KEYS - result.keys()
+        logger.error("OpenRouter premium numerology: missing keys %s", missing)
+        return None
+
+    if not isinstance(result.get("strengths"), list) or len(result["strengths"]) < 3:
+        logger.error("OpenRouter premium numerology: strengths invalid")
+        return None
+    if not isinstance(result.get("challenges"), list) or not result["challenges"]:
+        logger.error("OpenRouter premium numerology: challenges invalid")
+        return None
+    if not isinstance(result.get("advice"), list) or not result["advice"]:
+        logger.error("OpenRouter premium numerology: advice invalid")
+        return None
+
+    return result
+
+
 async def interpret_forecast_stories_async(
     *,
     sun_sign: str,

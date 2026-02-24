@@ -186,3 +186,20 @@ export async function calculateNumerology(fullName, birthDate) {
     }),
   });
 }
+
+/**
+ * Request premium numerology report via OpenRouter Gemini. Polls until complete.
+ * @param {string} fullName - Full birth name (Cyrillic or Latin)
+ * @param {string} birthDate - ISO date string "YYYY-MM-DD"
+ * @returns {Promise<object>} - result with {type:"numerology_premium", numbers:{...}, report:{...10 keys...}}
+ */
+export async function fetchNumerologyPremium(fullName, birthDate) {
+  const data = await apiRequest('/v1/numerology/premium', {
+    method: 'POST',
+    body: JSON.stringify({ full_name: fullName, birth_date: birthDate }),
+  });
+  if (data.status === 'pending') {
+    return await pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}

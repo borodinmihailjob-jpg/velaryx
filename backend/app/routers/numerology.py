@@ -1,9 +1,10 @@
 import logging
 from datetime import date as date_type
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import models, schemas
+from ..config import settings
 from ..dependencies import current_user_dep
 from ..limiter import limiter
 from ..llm_engine import _sanitize_user_input
@@ -72,3 +73,51 @@ async def calculate_numerology(
         status="done",
         task_id=None,
     )
+
+
+@router.post("/premium")
+@limiter.limit("5/minute")
+async def calculate_numerology_premium(
+    request: Request,
+    payload: schemas.NumerologyCalculateRequest,
+    user: models.User = Depends(current_user_dep),
+):
+    """Premium numerology report via OpenRouter Gemini.
+
+    Calculates all 6 numbers, then enqueues an ARQ background job for deep analysis.
+    Returns {"status": "pending", "task_id": "..."} — client polls /v1/tasks/{task_id}.
+    Result shape: {"type": "numerology_premium", "numbers": {...}, "report": {...10 keys...}}
+    """
+    if not settings.openrouter_api_key:
+        raise HTTPException(status_code=503, detail="Премиум LLM не настроен")
+
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status_code=503, detail="Очередь задач недоступна")
+
+    today = date_type.today()
+    result = calculate_all(
+        full_name=payload.full_name,
+        birth_date=payload.birth_date,
+        current_date=today,
+    )
+
+    safe_name = _sanitize_user_input(payload.full_name, max_length=200)
+    job = await arq_pool.enqueue_job(
+        "task_generate_numerology_premium",
+        user_id=user.id,
+        full_name=safe_name,
+        birth_date=payload.birth_date.isoformat(),
+        life_path=result.life_path,
+        expression=result.expression,
+        soul_urge=result.soul_urge,
+        personality=result.personality,
+        birthday=result.birthday,
+        personal_year=result.personal_year,
+    )
+    logger.info(
+        "Numerology premium LLM enqueued | user_id=%s | job_id=%s",
+        user.id,
+        job.job_id,
+    )
+    return {"status": "pending", "task_id": job.job_id}
