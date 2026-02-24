@@ -69,19 +69,19 @@ def _product_catalog() -> dict[str, StarProduct]:
             feature="wallet_topup_29",
             amount_stars=29,
             title="Пополнение баланса на 29 ⭐",
-            description="Пополнение внутреннего баланса Astrobot на 29 кредитов",
+            description="Пополнение внутреннего баланса Astrobot на 29 звёзд",
         ),
         "wallet_topup_49": StarProduct(
             feature="wallet_topup_49",
             amount_stars=49,
             title="Пополнение баланса на 49 ⭐",
-            description="Пополнение внутреннего баланса Astrobot на 49 кредитов",
+            description="Пополнение внутреннего баланса Astrobot на 49 звёзд",
         ),
         "wallet_topup_99": StarProduct(
             feature="wallet_topup_99",
             amount_stars=99,
             title="Пополнение баланса на 99 ⭐",
-            description="Пополнение внутреннего баланса Astrobot на 99 кредитов",
+            description="Пополнение внутреннего баланса Astrobot на 99 звёзд",
         ),
     }
 
@@ -318,7 +318,10 @@ def claim_wallet_balance_for_feature(
         )
     )
     if updated != 1:
-        raise HTTPException(status_code=402, detail="Недостаточно баланса. Пополните кошелёк.")
+        raise HTTPException(
+            status_code=402,
+            detail={"code": "insufficient_wallet_balance", "message": "Недостаточно баланса. Пополните кошелёк."},
+        )
 
     ledger = models.WalletLedger(
         user_id=user.id,
@@ -601,6 +604,114 @@ def attach_premium_claim_task(
         return
     if claim.source == "wallet" and claim.wallet_ledger_id is not None:
         attach_wallet_spend_task(db, user=user, wallet_ledger_id=claim.wallet_ledger_id, task_id=task_id)
+
+
+def validate_invoice_for_pre_checkout(
+    db: Session,
+    *,
+    invoice_payload: str,
+    tg_user_id: int | None,
+) -> tuple[bool, str | None]:
+    """Check whether a Telegram pre-checkout query should be approved.
+
+    Returns (True, None) if payment can proceed, (False, reason) if it should be rejected.
+    Fails open: unknown invoice_payload → approve (may be test or future feature).
+    """
+    payment = db.query(models.StarPayment).filter(models.StarPayment.invoice_payload == invoice_payload).first()
+    if payment is None:
+        return True, None  # unknown payload — let Telegram decide
+    if tg_user_id is not None and int(payment.tg_user_id) != int(tg_user_id):
+        return False, "Неверный пользователь платежа"
+    if payment.status in {PAYMENT_STATUS_PAID, PAYMENT_STATUS_CONSUMED}:
+        return False, "Счёт уже оплачен"
+    if payment.status in {PAYMENT_STATUS_FAILED, PAYMENT_STATUS_CANCELLED}:
+        return False, "Счёт недоступен для оплаты"
+    return True, None
+
+
+def restore_premium_claim_by_task_id(db: Session, *, job_id: str) -> bool:
+    """Called by ARQ worker when a premium LLM task fails.
+
+    Looks up the payment/wallet entry linked to this job and restores it to
+    a retryable state so the user can try again without losing their Stars.
+    Returns True if something was restored, False if nothing found.
+    """
+    now = utcnow()
+
+    # Try to restore a consumed StarPayment linked to this job
+    updated = (
+        db.query(models.StarPayment)
+        .filter(
+            models.StarPayment.consumed_by_task_id == job_id,
+            models.StarPayment.status == PAYMENT_STATUS_CONSUMED,
+        )
+        .update(
+            {
+                models.StarPayment.status: PAYMENT_STATUS_PAID,
+                models.StarPayment.consumed_at: None,
+                models.StarPayment.consumed_by_task_id: None,
+                models.StarPayment.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+    )
+    if updated >= 1:
+        db.commit()
+        logger.info("restore_premium_claim_by_task_id: payment restored | job_id=%s", job_id)
+        return True
+
+    # Try to refund a wallet debit linked to this job
+    debit = (
+        db.query(models.WalletLedger)
+        .filter(
+            models.WalletLedger.task_id == job_id,
+            models.WalletLedger.kind == WALLET_LEDGER_KIND_PREMIUM_DEBIT,
+        )
+        .first()
+    )
+    if debit is None:
+        return False
+
+    refund_exists = (
+        db.query(models.WalletLedger.id)
+        .filter(
+            models.WalletLedger.related_ledger_id == debit.id,
+            models.WalletLedger.kind == WALLET_LEDGER_KIND_PREMIUM_REFUND,
+        )
+        .first()
+    )
+    if refund_exists:
+        return False
+
+    refund_amount = abs(int(debit.delta_stars or 0))
+    if refund_amount <= 0:
+        return False
+
+    (
+        db.query(models.User)
+        .filter(models.User.id == debit.user_id)
+        .update(
+            {
+                models.User.wallet_balance: models.User.wallet_balance + refund_amount,
+                models.User.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+    )
+    refund = models.WalletLedger(
+        user_id=debit.user_id,
+        tg_user_id=debit.tg_user_id,
+        delta_stars=refund_amount,
+        kind=WALLET_LEDGER_KIND_PREMIUM_REFUND,
+        feature=debit.feature,
+        related_ledger_id=debit.id,
+        created_at=now,
+        meta_payload={"reason": "premium_task_failed"},
+    )
+    db.add(refund)
+    db.commit()
+    logger.info("restore_premium_claim_by_task_id: wallet refunded | job_id=%s", job_id)
+    return True
 
 
 async def send_payment_invoice_to_chat(

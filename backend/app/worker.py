@@ -8,7 +8,9 @@ from typing import Any
 from arq.connections import RedisSettings
 
 from .config import settings
+from .database import SessionLocal
 from .history import save_report_to_history
+from . import star_payments as _star_payments
 from .llm_engine import (
     interpret_natal_sections_async,
     interpret_natal_premium_async,
@@ -26,6 +28,24 @@ PREMIUM_LLM_FAILURE_MESSAGE = (
     "Премиум-функция временно недоступна: сбой при обращении к OpenRouter. "
     "Попробуйте еще раз через 1-2 минуты."
 )
+
+
+def _restore_premium_claim(job_id: str, user_id: int) -> None:
+    """Restore a consumed payment/wallet debit so user can retry after LLM failure."""
+    db = SessionLocal()
+    try:
+        restored = _star_payments.restore_premium_claim_by_task_id(db, job_id=job_id)
+        if restored:
+            logger.info("Worker: premium claim restored for retry | user_id=%s | job_id=%s", user_id, job_id)
+        else:
+            logger.warning("Worker: no claim found to restore | user_id=%s | job_id=%s", user_id, job_id)
+    except Exception as exc:
+        logger.error(
+            "Worker: failed to restore premium claim | user_id=%s | job_id=%s | err=%s",
+            user_id, job_id, exc,
+        )
+    finally:
+        db.close()
 
 
 async def task_generate_natal(
@@ -80,17 +100,6 @@ async def task_generate_natal(
     # Use LLM sections if generated, otherwise static fallback
     if llm_sections:
         logger.info("Worker: natal LLM success | user_id=%s | job_id=%s", user_id, job_id)
-        # Also persist to the natal LLM cache so next request is instant
-        try:
-            from .services import (
-                _natal_llm_cache_key,
-                _normalize_llm_sections,
-                NATAL_LLM_CACHE_TTL_SECONDS,
-                _natal_llm_cache_fingerprint,
-                _extract_natal_material,
-            )
-        except ImportError:
-            pass
         final_sections: list[dict] = [{"key": k, "text": v} for k, v in llm_sections.items()]
     else:
         logger.warning("Worker: natal LLM failed, using static fallback | user_id=%s | job_id=%s", user_id, job_id)
@@ -329,6 +338,7 @@ async def task_generate_numerology_premium(
         task_key = f"arq_task:{job_id}"
         task_payload = json.dumps({"status": "failed", "error": "Внутренняя ошибка при генерации отчёта"}, ensure_ascii=False)
         await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        _restore_premium_claim(job_id, user_id)
         raise
 
     if report:
@@ -338,6 +348,7 @@ async def task_generate_numerology_premium(
         task_key = f"arq_task:{job_id}"
         task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
         await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        _restore_premium_claim(job_id, user_id)
         return {"type": "numerology_premium", "numbers": {}, "report": None}
 
     result = {
@@ -442,6 +453,7 @@ async def task_generate_natal_premium(
         task_key = f"arq_task:{job_id}"
         task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
         await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        _restore_premium_claim(job_id, user_id)
         return {
             "type": "natal_premium",
             "sun_sign": sun_sign,
@@ -515,6 +527,7 @@ async def task_generate_tarot_premium(
         task_key = f"arq_task:{job_id}"
         task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
         await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        _restore_premium_claim(job_id, user_id)
         return {
             "type": "tarot_premium",
             "question": question,
@@ -579,6 +592,4 @@ class WorkerSettings:
     on_startup = on_worker_startup
     on_shutdown = on_worker_shutdown
     max_tries = 1  # LLM calls are expensive; don't retry automatically
-    # Local CPU Ollama (cold start + long prompts) can exceed 2 minutes.
-    # Keep this above OLLAMA_TIMEOUT_SECONDS to avoid ARQ cancelling valid work.
     job_timeout = 300

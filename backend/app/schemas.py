@@ -279,6 +279,16 @@ class WalletSummaryResponse(BaseModel):
     recent_entries: list[WalletLedgerEntryResponse]
 
 
+class InternalPreCheckoutValidateRequest(BaseModel):
+    invoice_payload: str = Field(min_length=1, max_length=128)
+    tg_user_id: int | None = None
+
+
+class InternalPreCheckoutValidateResponse(BaseModel):
+    ok: bool
+    reason: str | None = None
+
+
 class NumerologyCalculateRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=200)
     birth_date: date

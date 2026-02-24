@@ -156,6 +156,24 @@ async def sync_user_profile_from_start(message: Message) -> None:
         logger.warning("Failed to sync user language on /start | tg_user_id=%s | err=%s", user.id, exc)
 
 
+async def validate_payment_for_pre_checkout(invoice_payload: str, tg_user_id: int | None) -> bool:
+    """Returns True if payment should be approved. Fails open on backend errors."""
+    if not INTERNAL_API_KEY or not INTERNAL_API_BASE_URL:
+        return True
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            response = await client.post(
+                f"{INTERNAL_API_BASE_URL}/v1/payments/internal/validate-invoice",
+                headers={"X-Internal-API-Key": INTERNAL_API_KEY},
+                json={"invoice_payload": invoice_payload, "tg_user_id": tg_user_id},
+            )
+            if response.status_code == 200:
+                return bool(response.json().get("ok", True))
+    except Exception as exc:
+        logger.warning("Pre-checkout validation failed (approving anyway): %s", exc)
+    return True  # fail open: never reject a valid payment due to backend unavailability
+
+
 async def notify_backend_about_successful_payment(message: Message) -> None:
     payment = message.successful_payment
     if payment is None:
@@ -176,21 +194,43 @@ async def notify_backend_about_successful_payment(message: Message) -> None:
         "X-Internal-API-Key": INTERNAL_API_KEY,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                f"{INTERNAL_API_BASE_URL}/v1/payments/internal/telegram-success",
-                headers=headers,
-                json=payload,
+    max_retries = 4
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{INTERNAL_API_BASE_URL}/v1/payments/internal/telegram-success",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+            logger.info(
+                "Payment sync OK | attempt=%d | tg_user_id=%s | invoice_payload=%s",
+                attempt + 1,
+                message.from_user.id if message.from_user else "-",
+                payment.invoice_payload,
             )
-            response.raise_for_status()
-    except Exception as exc:  # pragma: no cover
-        logger.warning(
-            "Failed to sync successful payment | tg_user_id=%s | invoice_payload=%s | err=%s",
-            message.from_user.id if message.from_user else "-",
-            payment.invoice_payload,
-            exc,
-        )
+            return  # success — stop retrying
+        except Exception as exc:  # pragma: no cover
+            last_exc = exc
+            if attempt < max_retries - 1:
+                wait_seconds = 2 ** attempt  # 1 s, 2 s, 4 s
+                logger.warning(
+                    "Payment sync failed (attempt %d/%d), retry in %ds | err=%s",
+                    attempt + 1, max_retries, wait_seconds, exc,
+                )
+                await asyncio.sleep(wait_seconds)
+
+    logger.error(  # pragma: no cover
+        "CRITICAL: payment sync FAILED after %d attempts — manual recovery needed! "
+        "tg_user_id=%s | invoice_payload=%s | charge_id=%s | err=%s",
+        max_retries,
+        message.from_user.id if message.from_user else "-",
+        payment.invoice_payload,
+        payment.telegram_payment_charge_id,
+        last_exc,
+    )
 
 
 @dp.message(Command("start"))
@@ -232,7 +272,16 @@ async def app_handler(message: Message) -> None:
 
 @dp.pre_checkout_query()
 async def pre_checkout_handler(query: PreCheckoutQuery) -> None:
-    await bot.answer_pre_checkout_query(query.id, ok=True)
+    tg_user_id = query.from_user.id if query.from_user else None
+    should_approve = await validate_payment_for_pre_checkout(query.invoice_payload, tg_user_id)
+    if should_approve:
+        await bot.answer_pre_checkout_query(query.id, ok=True)
+    else:
+        await bot.answer_pre_checkout_query(
+            query.id,
+            ok=False,
+            error_message="Этот счёт уже был оплачен. Пожалуйста, вернитесь в приложение.",
+        )
 
 
 @dp.message(F.successful_payment)
@@ -249,7 +298,12 @@ async def successful_payment_handler(message: Message) -> None:
     )
     await notify_backend_about_successful_payment(message)
     if has_miniapp_link():
-        await message.answer("Оплата получена. Возвращайтесь в Mini App — отчёт готов к запуску.")
+        invoice_payload = payment.invoice_payload or ""
+        is_wallet_topup = str(invoice_payload).startswith("stars:wallet_topup_")
+        if is_wallet_topup:
+            await message.answer("Баланс пополнен ✨ Возвращайтесь в Mini App — звёзды уже зачислены.")
+        else:
+            await message.answer("Оплата получена. Возвращайтесь в Mini App — отчёт готов к запуску.")
 
 
 @dp.message(F.text)

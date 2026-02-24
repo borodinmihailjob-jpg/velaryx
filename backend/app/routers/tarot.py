@@ -107,7 +107,10 @@ async def draw_tarot_premium(
     cards = services.get_tarot_session(db=db, user_id=user.id, session_id=session.id).cards
     cards_payload = services.build_tarot_cards_payload(cards)
 
-    arq_pool = request.app.state.arq_pool
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status_code=503, detail="Очередь задач недоступна")
+
     access_claim = star_payments.claim_premium_access(
         db,
         user=user,

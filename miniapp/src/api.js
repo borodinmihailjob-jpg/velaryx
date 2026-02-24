@@ -1,7 +1,8 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const DEV_AUTH_ALLOWED = import.meta.env.VITE_ALLOW_DEV_AUTH === 'true';
 const USER_LANG_STORAGE_KEY = 'astrobot_user_language_code';
-const PENDING_STARS_PAYMENT_STORAGE_KEY = 'astrobot_pending_stars_payment_v1';
+// Per-feature storage key prefix (v2). One slot per feature prevents cross-feature overwrites.
+const PENDING_STARS_PAYMENT_KEY_PREFIX = 'astrobot_pending_payment_v2:';
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || '';
 
 // Default request timeout (90s — long enough for LLM fallback paths)
@@ -181,13 +182,20 @@ function withQueryParam(path, key, value) {
 }
 
 function isWalletInsufficientError(err) {
-  const message = String(err?.message || '').toLowerCase();
-  return err?.status === 402 && message.includes('баланс');
+  // Prefer machine-readable code from backend (new format)
+  const detail = err?.detail?.detail;
+  if (detail?.code === 'insufficient_wallet_balance') return true;
+  // Fallback: string match for backward compatibility
+  return err?.status === 402 && String(err?.message || '').toLowerCase().includes('баланс');
 }
 
-function readPendingStarsPayment() {
+function _pendingPaymentKey(feature) {
+  return PENDING_STARS_PAYMENT_KEY_PREFIX + String(feature);
+}
+
+function readPendingStarsPayment(feature) {
   try {
-    const raw = localStorage.getItem(PENDING_STARS_PAYMENT_STORAGE_KEY);
+    const raw = localStorage.getItem(_pendingPaymentKey(feature));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
@@ -197,17 +205,17 @@ function readPendingStarsPayment() {
   }
 }
 
-function writePendingStarsPayment(data) {
+function writePendingStarsPayment(feature, data) {
   try {
-    localStorage.setItem(PENDING_STARS_PAYMENT_STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(_pendingPaymentKey(feature), JSON.stringify(data));
   } catch {
     // ignore storage errors
   }
 }
 
-function clearPendingStarsPayment() {
+function clearPendingStarsPayment(feature) {
   try {
-    localStorage.removeItem(PENDING_STARS_PAYMENT_STORAGE_KEY);
+    localStorage.removeItem(_pendingPaymentKey(feature));
   } catch {
     // ignore storage errors
   }
@@ -308,7 +316,7 @@ function openBotChatForPayment() {
   window.location.href = url;
 }
 
-async function waitForStarsPaymentConfirmation(paymentId, timeoutMs = 60_000) {
+async function waitForStarsPaymentConfirmation(paymentId, timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const data = await fetchStarsPaymentStatus(paymentId);
@@ -316,19 +324,18 @@ async function waitForStarsPaymentConfirmation(paymentId, timeoutMs = 60_000) {
     if (data?.status === 'failed' || data?.status === 'cancelled') {
       throw new ApiError('Оплата не была подтверждена.', 402, data);
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   throw new ApiError('Оплата прошла, но сервер ещё не получил подтверждение. Не оплачивайте повторно: попробуйте ещё раз через несколько секунд.', 409, null);
 }
 
 async function resumePendingStarsPayment(feature) {
-  const pending = readPendingStarsPayment();
+  const pending = readPendingStarsPayment(feature);
   if (!pending) return null;
-  if (pending.feature !== feature) return null;
 
   const createdAt = Number(pending.created_at_ms || 0);
   if (createdAt > 0 && Date.now() - createdAt > 24 * 60 * 60 * 1000) {
-    clearPendingStarsPayment();
+    clearPendingStarsPayment(feature);
     return null;
   }
 
@@ -337,18 +344,18 @@ async function resumePendingStarsPayment(feature) {
     status = await fetchStarsPaymentStatus(pending.payment_id);
   } catch (err) {
     if (err?.status === 404) {
-      clearPendingStarsPayment();
+      clearPendingStarsPayment(feature);
       return null;
     }
     throw err;
   }
 
   if (status?.status === 'paid' || status?.status === 'consumed') {
-    clearPendingStarsPayment();
+    clearPendingStarsPayment(feature);
     return String(pending.payment_id);
   }
   if (status?.status === 'failed' || status?.status === 'cancelled') {
-    clearPendingStarsPayment();
+    clearPendingStarsPayment(feature);
     return null;
   }
 
@@ -363,11 +370,16 @@ async function resumePendingStarsPayment(feature) {
         pending,
       );
     }
+    // 'failed' or unknown status means the invoice can no longer be paid — clear and start fresh
+    if (!isRetriableInvoiceOpenStatus(invoiceStatus) && invoiceStatus !== 'cancelled') {
+      clearPendingStarsPayment(feature);
+      return null;
+    }
     assertInvoiceOpenStatus(invoiceStatus, pending);
   }
 
   await waitForStarsPaymentConfirmation(pending.payment_id);
-  clearPendingStarsPayment();
+  clearPendingStarsPayment(feature);
   return String(pending.payment_id);
 }
 
@@ -380,7 +392,7 @@ async function payStarsForFeature(feature) {
     throw new ApiError('Сервер не смог создать счёт Stars.', 500, invoice);
   }
 
-  writePendingStarsPayment({
+  writePendingStarsPayment(feature, {
     feature,
     payment_id: String(invoice.payment_id),
     invoice_link: String(invoice.invoice_link),
@@ -397,10 +409,14 @@ async function payStarsForFeature(feature) {
       invoice,
     );
   }
+  // 'failed' or unknown: clear this invoice so the next attempt creates a fresh one
+  if (!isRetriableInvoiceOpenStatus(invoiceStatus) && invoiceStatus !== 'cancelled') {
+    clearPendingStarsPayment(feature);
+  }
   assertInvoiceOpenStatus(invoiceStatus, invoice);
 
   await waitForStarsPaymentConfirmation(invoice.payment_id);
-  clearPendingStarsPayment();
+  clearPendingStarsPayment(feature);
   return String(invoice.payment_id);
 }
 

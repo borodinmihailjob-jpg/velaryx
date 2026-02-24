@@ -134,6 +134,20 @@ async def send_stars_payment_to_chat(
     return schemas.StarsSendToChatResponse(payment_id=payment.id, status=payment.status)
 
 
+@router.post("/internal/validate-invoice", response_model=schemas.InternalPreCheckoutValidateResponse)
+async def validate_invoice_for_pre_checkout(
+    payload: schemas.InternalPreCheckoutValidateRequest,
+    _: None = Depends(_check_internal_api_key),
+    db: Session = Depends(get_db),
+):
+    ok, reason = star_payments.validate_invoice_for_pre_checkout(
+        db,
+        invoice_payload=payload.invoice_payload,
+        tg_user_id=payload.tg_user_id,
+    )
+    return schemas.InternalPreCheckoutValidateResponse(ok=ok, reason=reason)
+
+
 @router.post("/internal/telegram-success", response_model=schemas.TelegramStarsPaymentConfirmResponse)
 async def telegram_payment_success_callback(
     payload: schemas.TelegramStarsPaymentConfirmRequest,
