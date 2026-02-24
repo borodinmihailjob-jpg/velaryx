@@ -532,3 +532,11 @@ export async function saveUserMbtiType(mbtiType) {
     body: JSON.stringify({ mbti_type: mbtiType }),
   });
 }
+
+// Oracle
+export async function askOracle(question) {
+  return apiRequest('/v1/tarot/draw', {
+    method: 'POST',
+    body: JSON.stringify({ spread_type: 'one_card', question }),
+  });
+}

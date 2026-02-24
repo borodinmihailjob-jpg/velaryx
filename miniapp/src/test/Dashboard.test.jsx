@@ -1,63 +1,106 @@
-/**
- * Dashboard integration tests.
- * Since Dashboard is an internal component of App.jsx (not exported),
- * we test the API contract and data flow via the apiRequest mock.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-// Mock api module before any imports that use it
-vi.mock('../api', async (importOriginal) => {
-  const mod = await importOriginal();
-  return { ...mod, apiRequest: vi.fn(), pollTask: vi.fn() };
-});
+vi.mock('../api', () => ({
+  apiRequest: vi.fn(),
+  askOracle: vi.fn(),
+  fetchUserHistory: vi.fn(),
+  fetchWalletSummary: vi.fn(),
+  persistUserLanguageCode: vi.fn((code) => code || 'ru'),
+  resolveUserLanguageCode: vi.fn(() => 'ru'),
+}));
 
-import { apiRequest } from '../api';
+import App from '../App';
+import { apiRequest, askOracle, fetchUserHistory, fetchWalletSummary } from '../api';
 
-const MOCK_FORECAST = {
-  date: '2026-02-18',
-  energy_score: 85,
-  summary: 'Акцент на творчестве',
-  payload: { mood: 'вдохновение', focus: 'творчестве' },
-};
+function mockOracleResponse() {
+  return {
+    cards: [
+      {
+        position: 1,
+        card_name: 'Шут',
+        meaning: 'Начало нового пути',
+        is_reversed: false,
+        slot_label: 'Знак',
+      },
+    ],
+    ai_interpretation: 'Суть: Начинай с любопытства. Сделай: Выбери первый шаг сегодня. Избегай: Страха ошибки.',
+  };
+}
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  apiRequest.mockResolvedValue(MOCK_FORECAST);
+  localStorage.clear();
+  localStorage.setItem('onboarding_complete', '1');
+
+  apiRequest.mockImplementation((path) => {
+    if (path === '/v1/users/me') return Promise.resolve({ language_code: 'ru' });
+    if (path === '/v1/natal/profile/latest') return Promise.resolve({ id: 'profile-1' });
+    return Promise.resolve({});
+  });
+
+  askOracle.mockResolvedValue(mockOracleResponse());
+  fetchWalletSummary.mockResolvedValue({ balance_stars: 12, recent_entries: [] });
+  fetchUserHistory.mockResolvedValue({ reports: [] });
+
+  vi.spyOn(window, 'alert').mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Dashboard energy data from API', () => {
-  it('apiRequest is called with /v1/forecast/daily when Dashboard mounts', async () => {
-    // Simulate the effect Dashboard would run on mount
-    await apiRequest('/v1/forecast/daily');
-    expect(apiRequest).toHaveBeenCalledWith('/v1/forecast/daily');
+describe('Velaryx Oracle UI', () => {
+  it('renders oracle home with new bottom tabs', () => {
+    render(<App />);
+
+    expect(screen.getByText('Velaryx')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Оракул' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Совместимость' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Профиль' })).toBeInTheDocument();
   });
 
-  it('energy_score comes from API, not hardcoded to 78', async () => {
-    const data = await apiRequest('/v1/forecast/daily');
-    expect(data.energy_score).toBe(85);
-    expect(data.energy_score).not.toBe(78);
+  it('switches to compatibility and profile tabs', async () => {
+    render(<App />);
+
+    await waitFor(() => expect(apiRequest).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Совместимость' }));
+    expect(screen.getByRole('heading', { name: 'Совместимость' })).toBeInTheDocument();
+    expect(screen.getByText('Рассчитать совместимость')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Профиль' }));
+    expect(await screen.findByRole('heading', { name: 'Профиль' })).toBeInTheDocument();
+    expect(await screen.findByText('12 ⭐')).toBeInTheDocument();
+    expect(fetchWalletSummary).toHaveBeenCalled();
   });
 
-  it('mood and focus come from API payload', async () => {
-    const data = await apiRequest('/v1/forecast/daily');
-    expect(data.payload.mood).toBe('вдохновение');
-    expect(data.payload.focus).toBe('творчестве');
-  });
+  it('goes through oracle home -> loading -> result', async () => {
+    let resolveOracle;
+    askOracle.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveOracle = resolve;
+      })
+    );
 
-  it('handles API error gracefully without crashing', async () => {
-    apiRequest.mockRejectedValue(new Error('Network error'));
-    await expect(apiRequest('/v1/forecast/daily')).rejects.toThrow('Network error');
-    // Dashboard should catch this error and show dailyError message — tested via unit
-  });
-});
+    render(<App />);
 
-describe('pollTask integration', () => {
-  it('is imported and callable', async () => {
-    const { pollTask } = await import('../api');
-    expect(typeof pollTask).toBe('function');
+    fireEvent.change(screen.getByPlaceholderText(/Стоит ли менять работу/i), {
+      target: { value: 'Стоит ли менять работу?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Получить знак' }));
+
+    expect(screen.getByText('Я слушаю воду…')).toBeInTheDocument();
+    expect(askOracle).toHaveBeenCalledWith('Стоит ли менять работу?');
+
+    resolveOracle(mockOracleResponse());
+
+    expect(await screen.findByText('Знак получен')).toBeInTheDocument();
+    expect(await screen.findByText('Шут')).toBeInTheDocument();
+    expect(screen.getAllByText(/Суть:/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText('Задать новый вопрос'));
+    await waitFor(() => {
+      expect(screen.getByText('Velaryx')).toBeInTheDocument();
+    });
   });
 });
