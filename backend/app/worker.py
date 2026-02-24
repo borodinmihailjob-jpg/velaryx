@@ -293,16 +293,23 @@ async def task_generate_numerology_premium(
 
     logger.info("Worker: task_generate_numerology_premium start | user_id=%s | job_id=%s", user_id, job_id)
 
-    report = await interpret_numerology_premium_async(
-        full_name=full_name,
-        birth_date=birth_date,
-        life_path=life_path,
-        expression=expression,
-        soul_urge=soul_urge,
-        personality=personality,
-        birthday=birthday,
-        personal_year=personal_year,
-    )
+    try:
+        report = await interpret_numerology_premium_async(
+            full_name=full_name,
+            birth_date=birth_date,
+            life_path=life_path,
+            expression=expression,
+            soul_urge=soul_urge,
+            personality=personality,
+            birthday=birthday,
+            personal_year=personal_year,
+        )
+    except Exception as exc:
+        logger.error("Worker: task_generate_numerology_premium exception | user_id=%s | job_id=%s | err=%s", user_id, job_id, exc)
+        task_key = f"arq_task:{job_id}"
+        task_payload = json.dumps({"status": "failed", "error": "Внутренняя ошибка при генерации отчёта"}, ensure_ascii=False)
+        await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        raise
 
     if report:
         logger.info("Worker: numerology premium LLM success | user_id=%s | job_id=%s", user_id, job_id)

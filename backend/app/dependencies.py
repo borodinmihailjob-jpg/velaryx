@@ -14,6 +14,7 @@ from .telegram_auth import verify_init_data
 class AuthContext:
     tg_user_id: int
     validated_via_telegram: bool
+    telegram_user_payload: dict | None = None
 
 
 def get_auth_context(
@@ -25,7 +26,7 @@ def get_auth_context(
         if x_internal_api_key and hmac.compare_digest(x_internal_api_key, settings.internal_api_key):
             if x_tg_user_id is None:
                 raise HTTPException(status_code=401, detail="X-TG-USER-ID is required for internal auth")
-            return AuthContext(tg_user_id=int(x_tg_user_id), validated_via_telegram=False)
+            return AuthContext(tg_user_id=int(x_tg_user_id), validated_via_telegram=False, telegram_user_payload=None)
 
     if x_telegram_init_data:
         if not settings.bot_token:
@@ -43,13 +44,17 @@ def get_auth_context(
         if not isinstance(user_payload, dict) or "id" not in user_payload:
             raise HTTPException(status_code=401, detail="Invalid Telegram user payload")
 
-        return AuthContext(tg_user_id=int(user_payload["id"]), validated_via_telegram=True)
+        return AuthContext(
+            tg_user_id=int(user_payload["id"]),
+            validated_via_telegram=True,
+            telegram_user_payload=user_payload,
+        )
 
     if settings.require_telegram_init_data:
         raise HTTPException(status_code=401, detail="X-Telegram-Init-Data header is required")
 
     if settings.allow_insecure_dev_auth and x_tg_user_id is not None:
-        return AuthContext(tg_user_id=int(x_tg_user_id), validated_via_telegram=False)
+        return AuthContext(tg_user_id=int(x_tg_user_id), validated_via_telegram=False, telegram_user_payload=None)
 
     raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -58,4 +63,4 @@ def current_user_dep(
     db: Session = Depends(get_db),
     auth: AuthContext = Depends(get_auth_context),
 ):
-    return get_or_create_user(db, auth.tg_user_id)
+    return get_or_create_user(db, auth.tg_user_id, telegram_user_payload=auth.telegram_user_payload)

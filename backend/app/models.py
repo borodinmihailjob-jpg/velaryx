@@ -33,7 +33,17 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(INT64, primary_key=True, autoincrement=True)
     tg_user_id: Mapped[int] = mapped_column(INT64, unique=True, nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(255))
+    last_name: Mapped[str | None] = mapped_column(String(255))
+    username: Mapped[str | None] = mapped_column(String(255), index=True)
+    language_code: Mapped[str | None] = mapped_column(String(16))
+    is_premium: Mapped[bool | None] = mapped_column(Boolean)
+    allows_write_to_pm: Mapped[bool | None] = mapped_column(Boolean)
+    photo_url: Mapped[str | None] = mapped_column(Text)
+    telegram_user_payload: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BirthProfile(Base):

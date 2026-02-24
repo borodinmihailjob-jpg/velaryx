@@ -1140,7 +1140,6 @@ function Numerology({ onBack, onMissingProfile }) {
           .finally(() => { setInterpretationLoading(false); });
       }
     } catch (e) {
-      if (isMissingProfileError(e)) { onMissingProfile?.(); return; }
       setError(String(e?.message || e || 'Не удалось рассчитать числа.'));
     } finally {
       setSubmitLoading(false);
@@ -1387,7 +1386,6 @@ function NumerologyPremiumReport({ onBack, onMissingProfile }) {
         setResult(data);
       }
     } catch (e) {
-      if (isMissingProfileError(e)) { onMissingProfile?.(); return; }
       setError(String(e?.message || e || 'Ошибка загрузки отчёта.'));
     } finally {
       setLoading(false);
@@ -1621,7 +1619,7 @@ function Dashboard({
   const todayFocus = dailyForecast?.payload?.focus ?? null;
 
   return (
-    <Shell title="Созвездие" subtitle="Астрология и таро в одном потоке.">
+    <Shell title="Velaryx" subtitle="Твой проводник в нитях судьбы">
       <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
 
         {/* HERO CARD: Daily Energy */}

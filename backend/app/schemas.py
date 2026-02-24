@@ -21,6 +21,53 @@ class BirthProfileCreateRequest(BaseModel):
         return v
 
 
+class UserSyncRequest(BaseModel):
+    first_name: str | None = Field(default=None, max_length=255)
+    last_name: str | None = Field(default=None, max_length=255)
+    username: str | None = Field(default=None, max_length=255)
+    language_code: str | None = Field(default=None, max_length=16)
+    is_premium: bool | None = None
+    allows_write_to_pm: bool | None = None
+    photo_url: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("first_name", "last_name", "username", "language_code", "photo_url")
+    @classmethod
+    def strip_optional_strings(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+
+class UserPatchRequest(UserSyncRequest):
+    pass
+
+
+class UserResponse(BaseModel):
+    id: int
+    tg_user_id: int
+    first_name: str | None
+    last_name: str | None
+    username: str | None
+    language_code: str | None
+    is_premium: bool | None
+    allows_write_to_pm: bool | None
+    photo_url: str | None
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: datetime | None
+
+
+class UserDeleteResponse(BaseModel):
+    ok: bool = True
+    deleted_user: bool
+    deleted_birth_profiles: int
+    deleted_natal_charts: int
+    deleted_daily_forecasts: int
+    deleted_tarot_sessions: int
+    deleted_tarot_cards: int
+
+
 class BirthProfileResponse(BaseModel):
     id: UUID
     birth_date: date

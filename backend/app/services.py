@@ -1,5 +1,9 @@
 from datetime import date, datetime, timezone
 import hashlib
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 import json
 import logging
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -51,12 +55,66 @@ logger = logging.getLogger("astrobot.natal.llm_cache")
 _redis_client: redis.Redis | None = None
 
 
-def get_or_create_user(db: Session, tg_user_id: int) -> models.User:
+def _clean_optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _apply_user_fields(user: models.User, values: dict[str, object]) -> bool:
+    changed = False
+    for field, value in values.items():
+        if getattr(user, field) != value:
+            setattr(user, field, value)
+            changed = True
+    return changed
+
+
+def _telegram_user_values(telegram_user_payload: dict | None) -> dict[str, object]:
+    if not isinstance(telegram_user_payload, dict):
+        return {}
+    return {
+        "first_name": _clean_optional_text(telegram_user_payload.get("first_name")),
+        "last_name": _clean_optional_text(telegram_user_payload.get("last_name")),
+        "username": _clean_optional_text(telegram_user_payload.get("username")),
+        "language_code": _clean_optional_text(telegram_user_payload.get("language_code")),
+        "is_premium": (
+            bool(telegram_user_payload["is_premium"]) if "is_premium" in telegram_user_payload else None
+        ),
+        "allows_write_to_pm": (
+            bool(telegram_user_payload["allows_write_to_pm"])
+            if "allows_write_to_pm" in telegram_user_payload
+            else None
+        ),
+        "photo_url": _clean_optional_text(telegram_user_payload.get("photo_url")),
+        "telegram_user_payload": telegram_user_payload,
+    }
+
+
+def get_or_create_user(
+    db: Session,
+    tg_user_id: int,
+    telegram_user_payload: dict | None = None,
+) -> models.User:
     user = db.query(models.User).filter(models.User.tg_user_id == tg_user_id).first()
     if user:
+        if isinstance(telegram_user_payload, dict):
+            now = utcnow()
+            changed = _apply_user_fields(user, _telegram_user_values(telegram_user_payload))
+            user.last_seen_at = now
+            changed = True
+            if changed:
+                user.updated_at = now
+                db.add(user)
+                db.commit()
+                db.refresh(user)
         return user
 
-    user = models.User(tg_user_id=tg_user_id)
+    create_values = _telegram_user_values(telegram_user_payload) if isinstance(telegram_user_payload, dict) else {}
+    user = models.User(tg_user_id=tg_user_id, **create_values)
+    if isinstance(telegram_user_payload, dict):
+        user.last_seen_at = utcnow()
     db.add(user)
     try:
         db.commit()
@@ -66,8 +124,39 @@ def get_or_create_user(db: Session, tg_user_id: int) -> models.User:
         db.rollback()
         existing = db.query(models.User).filter(models.User.tg_user_id == tg_user_id).first()
         if existing:
+            if isinstance(telegram_user_payload, dict):
+                now = utcnow()
+                changed = _apply_user_fields(existing, _telegram_user_values(telegram_user_payload))
+                existing.last_seen_at = now
+                changed = True
+                if changed:
+                    existing.updated_at = now
+                    db.add(existing)
+                    db.commit()
+                    db.refresh(existing)
             return existing
         raise
+
+
+def update_user_fields(
+    db: Session,
+    user: models.User,
+    patch: dict[str, object],
+    *,
+    touch_last_seen: bool = False,
+) -> models.User:
+    now = utcnow()
+    changed = _apply_user_fields(user, patch)
+    if touch_last_seen:
+        user.last_seen_at = now
+        changed = True
+    if not changed:
+        return user
+    user.updated_at = now
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def _get_redis_client() -> redis.Redis | None:

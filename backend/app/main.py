@@ -20,7 +20,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from .config import settings
 from .limiter import limiter
 from .localization import localize_json_bytes
-from .routers import forecast, health, natal, tarot, telemetry, tasks as tasks_router
+from .routers import forecast, health, natal, tarot, telemetry, tasks as tasks_router, users
 try:
     from .routers import geo
 except ImportError:  # pragma: no cover
@@ -177,7 +177,7 @@ if settings.cors_origins():
         CORSMiddleware,
         allow_origins=settings.cors_origins(),
         allow_credentials=True,
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization", "X-TG-User-Id", "X-Telegram-Init-Data", "X-Internal-Api-Key"],
     )
 
@@ -188,6 +188,7 @@ app.include_router(natal.router)
 app.include_router(forecast.router)
 app.include_router(tarot.router)
 app.include_router(telemetry.router)
+app.include_router(users.router)
 app.include_router(tasks_router.router)
 if numerology_router is not None:
     app.include_router(numerology_router.router)
