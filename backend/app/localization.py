@@ -74,18 +74,38 @@ KNOWN_TRANSLATIONS = {
 
 LATIN_RE = re.compile(r"[A-Za-z]")
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+LETTER_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
 TOKENISH_RE = re.compile(r"^[A-Za-z0-9_./:=+\-]+$")
 
+DEFAULT_TARGET_LANG = "ru"
 
-def _can_be_translated(text: str) -> bool:
+
+def normalize_target_language(raw: str | None) -> str:
+    if not raw:
+        return DEFAULT_TARGET_LANG
+    candidate = str(raw).strip().lower()
+    if not candidate:
+        return DEFAULT_TARGET_LANG
+    candidate = candidate.split(",", 1)[0].split(";", 1)[0].strip()
+    candidate = candidate.replace("_", "-")
+    if not candidate:
+        return DEFAULT_TARGET_LANG
+    base = candidate.split("-", 1)[0].strip()
+    if re.fullmatch(r"[a-z]{2,3}", base):
+        return base
+    return DEFAULT_TARGET_LANG
+
+
+def _can_be_translated(text: str, target_lang: str) -> bool:
     if not text:
         return False
-    if CYRILLIC_RE.search(text):
+    if not LETTER_RE.search(text):
         return False
-    if not LATIN_RE.search(text):
-        return False
-    if text in KNOWN_TRANSLATIONS:
+    if target_lang == "ru" and text in KNOWN_TRANSLATIONS:
         return True
+
+    if target_lang == "ru" and CYRILLIC_RE.search(text) and not LATIN_RE.search(text):
+        return False
 
     # Keep technical tokens untouched.
     if TOKENISH_RE.fullmatch(text) and " " not in text:
@@ -95,18 +115,23 @@ def _can_be_translated(text: str) -> bool:
 
 
 @lru_cache(maxsize=4096)
-def _translate_via_google_free(text: str) -> str:
+def _translate_via_google_free(text: str, target_lang: str) -> str:
     if not settings.enable_response_localization:
         return text
     if settings.local_only_mode:
         return text
 
-    if not _can_be_translated(text):
+    target_lang = normalize_target_language(target_lang)
+    if target_lang == DEFAULT_TARGET_LANG and not settings.translate_via_google_free and text not in KNOWN_TRANSLATIONS:
         return text
 
-    mapped = KNOWN_TRANSLATIONS.get(text)
-    if mapped:
-        return mapped
+    if not _can_be_translated(text, target_lang):
+        return text
+
+    if target_lang == "ru":
+        mapped = KNOWN_TRANSLATIONS.get(text)
+        if mapped:
+            return mapped
 
     if not settings.translate_via_google_free:
         return text
@@ -117,7 +142,7 @@ def _translate_via_google_free(text: str) -> str:
             params={
                 "client": "gtx",
                 "sl": "auto",
-                "tl": "ru",
+                "tl": target_lang,
                 "dt": "t",
                 "q": text,
             },
@@ -139,7 +164,9 @@ def _translate_via_google_free(text: str) -> str:
         return text
 
 
-def _replace_known_terms(value: str) -> str:
+def _replace_known_terms(value: str, target_lang: str) -> str:
+    if target_lang != "ru":
+        return value
     text = value
     for src, dst in KNOWN_TRANSLATIONS.items():
         if src == dst:
@@ -151,41 +178,43 @@ def _replace_known_terms(value: str) -> str:
     return text
 
 
-def _localize_string(value: str) -> str:
-    replaced = _replace_known_terms(value)
+def _localize_string(value: str, target_lang: str) -> str:
+    target_lang = normalize_target_language(target_lang)
+    replaced = _replace_known_terms(value, target_lang)
     if replaced != value:
         return replaced
 
-    direct = KNOWN_TRANSLATIONS.get(value)
-    if direct:
-        return direct
-    return _translate_via_google_free(value)
+    if target_lang == "ru":
+        direct = KNOWN_TRANSLATIONS.get(value)
+        if direct:
+            return direct
+    return _translate_via_google_free(value, target_lang)
 
 
-def localize_payload(payload: Any, key: str | None = None) -> Any:
+def localize_payload(payload: Any, key: str | None = None, *, target_lang: str = DEFAULT_TARGET_LANG) -> Any:
     if key and key in SKIP_KEYS:
         return payload
 
     if isinstance(payload, dict):
         localized: dict[str, Any] = {}
         for k, v in payload.items():
-            localized[k] = localize_payload(v, key=k)
+            localized[k] = localize_payload(v, key=k, target_lang=target_lang)
         return localized
 
     if isinstance(payload, list):
-        return [localize_payload(item, key=key) for item in payload]
+        return [localize_payload(item, key=key, target_lang=target_lang) for item in payload]
 
     if isinstance(payload, str):
-        return _localize_string(payload)
+        return _localize_string(payload, target_lang)
 
     return payload
 
 
-def localize_json_bytes(raw: bytes) -> bytes:
+def localize_json_bytes(raw: bytes, *, target_lang: str = DEFAULT_TARGET_LANG) -> bytes:
     try:
         payload = json.loads(raw.decode("utf-8"))
     except Exception:
         return raw
 
-    localized = localize_payload(payload)
+    localized = localize_payload(payload, target_lang=target_lang)
     return json.dumps(localized, ensure_ascii=False).encode("utf-8")

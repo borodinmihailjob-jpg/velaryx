@@ -1,13 +1,14 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, services
+from .. import models, schemas, services, star_payments
 from ..config import settings
 from ..database import get_db
 from ..dependencies import current_user_dep
+from ..history import save_report_to_history
 from ..limiter import limiter
 from ..tarot_engine import card_image_url
 
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/v1/tarot", tags=["tarot"])
 
 
 @router.post("/draw", response_model=schemas.TarotSessionResponse)
-def draw_tarot(
+async def draw_tarot(
+    request: Request,
+    background_tasks: BackgroundTasks,
     payload: schemas.TarotDrawRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
@@ -35,6 +38,25 @@ def draw_tarot(
     )
     hide_cards = llm_provider == "local:fallback"
     response_cards = [] if hide_cards else sorted(cards, key=lambda c: c.position)
+
+    redis = getattr(request.app.state, "arq_pool", None)
+    cards_summary = [
+        {"card_name": c.card_name, "is_reversed": c.is_reversed, "slot_label": c.slot_label}
+        for c in sorted(cards, key=lambda c: c.position)
+    ]
+    background_tasks.add_task(
+        save_report_to_history,
+        redis=redis,
+        tg_user_id=user.tg_user_id,
+        report_type="tarot_basic",
+        report_id=str(session.id),
+        is_premium=False,
+        summary={
+            "spread_type": session.spread_type,
+            "question": session.question,
+            "cards": cards_summary,
+        },
+    )
 
     return schemas.TarotSessionResponse(
         session_id=session.id,
@@ -63,6 +85,7 @@ def draw_tarot(
 async def draw_tarot_premium(
     request: Request,
     payload: schemas.TarotDrawRequest,
+    payment_id: UUID | None = None,
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
 ):
@@ -84,14 +107,29 @@ async def draw_tarot_premium(
     cards_payload = services.build_tarot_cards_payload(cards)
 
     arq_pool = request.app.state.arq_pool
-    job = await arq_pool.enqueue_job(
-        "task_generate_tarot_premium",
-        user_id=user.id,
-        question=session.question,
-        spread_type=session.spread_type,
-        cards=cards_payload,
-        created_at=session.created_at.isoformat(),
+    star_payments.claim_paid_payment_for_feature(
+        db,
+        user=user,
+        feature="tarot_premium",
+        payment_id=payment_id,
     )
+    try:
+        job = await arq_pool.enqueue_job(
+            "task_generate_tarot_premium",
+            user_id=user.id,
+            tg_user_id=user.tg_user_id,
+            session_id=str(session.id),
+            question=session.question,
+            spread_type=session.spread_type,
+            cards=cards_payload,
+            created_at=session.created_at.isoformat(),
+        )
+    except Exception:
+        if payment_id is not None:
+            star_payments.restore_consumed_payment_to_paid(db, user=user, payment_id=payment_id)
+        raise
+    if payment_id is not None:
+        star_payments.attach_consumed_payment_task(db, user=user, payment_id=payment_id, task_id=job.job_id)
     logger.info("Tarot premium LLM enqueued | user_id=%s | job_id=%s", user.id, job.job_id)
     return {"status": "pending", "task_id": job.job_id}
 

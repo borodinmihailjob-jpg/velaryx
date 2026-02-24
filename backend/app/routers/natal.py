@@ -1,11 +1,12 @@
 import json
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, services
+from .. import models, schemas, services, star_payments
 from ..config import settings
 from ..database import get_db
 from ..dependencies import current_user_dep
@@ -191,6 +192,7 @@ async def get_full_natal(
         job = await arq_pool.enqueue_job(
             "task_generate_natal",
             user_id=user.id,
+            tg_user_id=user.tg_user_id,
             chart_id=str(chart.id),
             profile_id=str(chart.profile_id),
             sun_sign=str(chart.sun_sign or ""),
@@ -235,6 +237,7 @@ async def get_full_natal(
 @limiter.limit("5/minute")
 async def get_full_natal_premium(
     request: Request,
+    payment_id: UUID | None = None,
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
 ):
@@ -262,28 +265,42 @@ async def get_full_natal_premium(
         rising_sign=str(chart.rising_sign or ""),
     )
 
-    job = await arq_pool.enqueue_job(
-        "task_generate_natal_premium",
-        user_id=user.id,
-        chart_id=str(chart.id),
-        profile_id=str(chart.profile_id),
-        sun_sign=str(chart.sun_sign or ""),
-        moon_sign=str(chart.moon_sign or ""),
-        rising_sign=str(chart.rising_sign or ""),
-        wheel_chart_url=chart_payload.get("wheel_chart_url") or None,
-        created_at=chart.created_at.isoformat(),
-        natal_summary=str(material.get("natal_summary") or ""),
-        key_aspects=list(material.get("key_aspects_lines") or []),
-        planetary_profile=list(material.get("planetary_profile_lines") or []),
-        house_cusps=list(material.get("house_cusp_lines") or []),
-        planets_in_houses=list(material.get("planets_in_houses_lines") or []),
-        mc_line=str(material.get("mc_line") or ""),
-        nodes_line=str(material.get("nodes_line") or ""),
-        house_rulers=list(material.get("house_rulers_lines") or []),
-        dispositors=list(material.get("dispositors_lines") or []),
-        essential_dignities=list(material.get("dignity_lines") or []),
-        configurations=list(material.get("configurations_lines") or []),
-        full_aspects=list(material.get("full_aspect_lines") or []),
+    star_payments.claim_paid_payment_for_feature(
+        db,
+        user=user,
+        feature="natal_premium",
+        payment_id=payment_id,
     )
+    try:
+        job = await arq_pool.enqueue_job(
+            "task_generate_natal_premium",
+            user_id=user.id,
+            tg_user_id=user.tg_user_id,
+            chart_id=str(chart.id),
+            profile_id=str(chart.profile_id),
+            sun_sign=str(chart.sun_sign or ""),
+            moon_sign=str(chart.moon_sign or ""),
+            rising_sign=str(chart.rising_sign or ""),
+            wheel_chart_url=chart_payload.get("wheel_chart_url") or None,
+            created_at=chart.created_at.isoformat(),
+            natal_summary=str(material.get("natal_summary") or ""),
+            key_aspects=list(material.get("key_aspects_lines") or []),
+            planetary_profile=list(material.get("planetary_profile_lines") or []),
+            house_cusps=list(material.get("house_cusp_lines") or []),
+            planets_in_houses=list(material.get("planets_in_houses_lines") or []),
+            mc_line=str(material.get("mc_line") or ""),
+            nodes_line=str(material.get("nodes_line") or ""),
+            house_rulers=list(material.get("house_rulers_lines") or []),
+            dispositors=list(material.get("dispositors_lines") or []),
+            essential_dignities=list(material.get("dignity_lines") or []),
+            configurations=list(material.get("configurations_lines") or []),
+            full_aspects=list(material.get("full_aspect_lines") or []),
+        )
+    except Exception:
+        if payment_id is not None:
+            star_payments.restore_consumed_payment_to_paid(db, user=user, payment_id=payment_id)
+        raise
+    if payment_id is not None:
+        star_payments.attach_consumed_payment_task(db, user=user, payment_id=payment_id, task_id=job.job_id)
     logger.info("Natal premium LLM enqueued | user_id=%s | job_id=%s", user.id, job.job_id)
     return JSONResponse({"status": "pending", "task_id": job.job_id})

@@ -4,11 +4,12 @@ set -euo pipefail
 API_BASE_URL="${API_BASE_URL:-http://localhost:8000}"
 TG_USER_ID="${TG_USER_ID:-999001}"
 INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
-HTTP_TIMEOUT_SECONDS="${HTTP_TIMEOUT_SECONDS:-30}"
+HTTP_TIMEOUT_SECONDS="${HTTP_TIMEOUT_SECONDS:-180}"
 READINESS_TIMEOUT_SECONDS="${READINESS_TIMEOUT_SECONDS:-120}"
 RETRY_COUNT="${RETRY_COUNT:-4}"
 RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-4}"
 STRICT_LLM="${STRICT_LLM:-true}"
+STRICT_LLM_NORMALIZED="$(printf '%s' "$STRICT_LLM" | tr '[:upper:]' '[:lower:]')"
 
 BIRTH_DATE="${BIRTH_DATE:-1996-06-11}"
 BIRTH_TIME="${BIRTH_TIME:-08:30:00}"
@@ -93,6 +94,57 @@ request_with_retry() {
   die "Request failed after retries: $method $path"
 }
 
+task_status_value() {
+  local json_payload="$1"
+  printf '%s' "$json_payload" | python3 -c 'import json,sys; print(str((json.load(sys.stdin) or {}).get("status") or ""))'
+}
+
+task_id_value() {
+  local json_payload="$1"
+  printf '%s' "$json_payload" | python3 -c 'import json,sys; print(str((json.load(sys.stdin) or {}).get("task_id") or ""))'
+}
+
+resolve_task_if_pending() {
+  local json_payload="$1"
+  local timeout_seconds="${2:-120}"
+  local poll_interval_seconds="${3:-2}"
+  local status task_id started now elapsed task_json
+
+  status="$(task_status_value "$json_payload")" || die "Cannot parse async status"
+  if [[ "$status" != "pending" ]]; then
+    printf '%s' "$json_payload"
+    return 0
+  fi
+
+  task_id="$(task_id_value "$json_payload")" || die "Cannot parse task_id"
+  [[ -n "$task_id" ]] || die "Server returned pending without task_id"
+
+  started="$(date +%s)"
+  while true; do
+    task_json="$(request_or_fail "GET" "/v1/tasks/${task_id}")"
+    status="$(printf '%s' "$task_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(str(d.get("status") or ""))')" \
+      || die "Cannot parse task status"
+
+    if [[ "$status" == "done" ]]; then
+      printf '%s' "$task_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); import json as _j; print(_j.dumps(d.get("result"), ensure_ascii=False, separators=(",", ":")))' \
+        || die "Cannot extract task result"
+      return 0
+    fi
+    if [[ "$status" == "failed" ]]; then
+      local error_text
+      error_text="$(printf '%s' "$task_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(str(d.get("error") or "task failed"))')" || error_text="task failed"
+      die "Background task failed: ${error_text}"
+    fi
+
+    now="$(date +%s)"
+    elapsed=$((now - started))
+    if (( elapsed >= timeout_seconds )); then
+      die "Background task did not complete within ${timeout_seconds}s (task_id=${task_id})"
+    fi
+    sleep "$poll_interval_seconds"
+  done
+}
+
 wait_for_health() {
   local started now elapsed health_json
   started="$(date +%s)"
@@ -146,6 +198,7 @@ printf '%s' "$calculate_json" | python3 -c 'import json,sys; d=json.load(sys.std
 
 log "Checking full natal output"
 full_json="$(request_or_fail "GET" "/v1/natal/full")"
+full_json="$(resolve_task_if_pending "$full_json" 180 2)"
 sections_count="$(printf '%s' "$full_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("interpretation_sections") or []))')" \
   || die "Cannot parse interpretation sections"
 [[ "$sections_count" -ge 1 ]] || die "No natal interpretation sections returned"
@@ -157,6 +210,7 @@ printf '%s' "$daily_json" | python3 -c 'import json,sys; d=json.load(sys.stdin);
 
 log "Checking stories endpoint"
 stories_json="$(request_with_retry "GET" "/v1/forecast/stories")"
+stories_json="$(resolve_task_if_pending "$stories_json" 180 2)"
 stories_info="$(printf '%s' "$stories_json" | python3 -c 'import json,sys; d=json.load(sys.stdin); slides=d.get("slides") or []; provider=str(d.get("llm_provider") or ""); print(f"{len(slides)}|{provider}")')" \
   || die "Stories response invalid"
 stories_count="${stories_info%%|*}"
@@ -176,7 +230,7 @@ tarot_has_text="${tarot_info%%|*}"
 tarot_provider="${tarot_info##*|}"
 [[ "$tarot_has_text" == "1" ]] || die "Tarot interpretation is empty"
 
-if [[ "${STRICT_LLM,,}" == "true" ]]; then
+if [[ "$STRICT_LLM_NORMALIZED" == "true" ]]; then
   [[ "$stories_provider" != "local:fallback" ]] || die "Stories LLM provider is fallback"
   [[ "$tarot_provider" != "local:fallback" ]] || die "Tarot LLM provider is fallback"
 fi

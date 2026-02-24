@@ -19,8 +19,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from .config import settings
 from .limiter import limiter
-from .localization import localize_json_bytes
-from .routers import forecast, health, natal, tarot, telemetry, tasks as tasks_router, users
+from .localization import localize_json_bytes, normalize_target_language
+from .routers import forecast, health, natal, payments, tarot, telemetry, tasks as tasks_router, users
 try:
     from .routers import geo
 except ImportError:  # pragma: no cover
@@ -77,6 +77,9 @@ class ApiAuditAndLocalizationMiddleware(BaseHTTPMiddleware):
         full_path = f"{path}?{query}" if query else path
         tg_user_id = request.headers.get("x-tg-user-id") or "-"
         auth_mode = "telegram" if request.headers.get("x-telegram-init-data") else "dev/internal"
+        target_lang = normalize_target_language(
+            request.headers.get("x-user-language") or request.headers.get("accept-language")
+        )
 
         try:
             response = await call_next(request)
@@ -109,7 +112,7 @@ class ApiAuditAndLocalizationMiddleware(BaseHTTPMiddleware):
         ):
             # Run sync (potentially blocking) localization in a threadpool thread
             # to avoid blocking the event loop during Google Translate HTTP calls.
-            localized_body = await asyncio.to_thread(localize_json_bytes, response_body)
+            localized_body = await asyncio.to_thread(localize_json_bytes, response_body, target_lang=target_lang)
 
         response_preview = _body_preview(localized_body, response_content_type)
         elapsed_ms = (time.perf_counter() - started_at) * 1000
@@ -127,6 +130,8 @@ class ApiAuditAndLocalizationMiddleware(BaseHTTPMiddleware):
         )
 
         headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+        if "application/json" in response_content_type and response.status_code not in (204, 304):
+            headers["Content-Language"] = target_lang
         return Response(
             content=localized_body,
             status_code=response.status_code,
@@ -178,7 +183,14 @@ if settings.cors_origins():
         allow_origins=settings.cors_origins(),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization", "X-TG-User-Id", "X-Telegram-Init-Data", "X-Internal-Api-Key"],
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "X-TG-User-Id",
+            "X-Telegram-Init-Data",
+            "X-Internal-Api-Key",
+            "X-User-Language",
+        ],
     )
 
 app.include_router(health.router)
@@ -187,6 +199,7 @@ if geo is not None:
 app.include_router(natal.router)
 app.include_router(forecast.router)
 app.include_router(tarot.router)
+app.include_router(payments.router)
 app.include_router(telemetry.router)
 app.include_router(users.router)
 app.include_router(tasks_router.router)

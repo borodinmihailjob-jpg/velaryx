@@ -41,9 +41,34 @@ class User(Base):
     allows_write_to_pm: Mapped[bool | None] = mapped_column(Boolean)
     photo_url: Mapped[str | None] = mapped_column(Text)
     telegram_user_payload: Mapped[dict | None] = mapped_column(JSON)
+    mbti_type: Mapped[str | None] = mapped_column(String(4))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StarPayment(Base):
+    __tablename__ = "star_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False, index=True)
+    tg_user_id: Mapped[int] = mapped_column(INT64, nullable=False, index=True)
+    feature: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    amount_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="XTR")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="created")
+    invoice_payload: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    invoice_link: Mapped[str | None] = mapped_column(Text)
+    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    provider_payment_charge_id: Mapped[str | None] = mapped_column(String(255))
+    consumed_by_task_id: Mapped[str | None] = mapped_column(String(128))
+    meta_payload: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship("User")
 
 
 class BirthProfile(Base):

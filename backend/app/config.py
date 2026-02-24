@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     bot_token: str | None = None
     internal_api_key: str | None = None
+    telegram_bot_api_timeout_seconds: float = 15.0
     bot_username: str = "replace_me_bot"
     mini_app_name: str = "app"
     mini_app_public_base_url: str | None = None
@@ -54,15 +55,22 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_timeout_seconds: float = 30.0
 
-    # LLM provider is kept for backward compatibility in env files.
-    # Only "ollama" is supported by runtime.
+    # Runtime LLM provider for non-premium features ("ollama" or "openrouter").
     llm_provider: str = "ollama"
 
     # OpenRouter (cloud LLM for premium features)
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Premium model (structured reports)
     openrouter_model: str = "google/gemini-2.0-flash-001"
+    # Optional separate model for non-premium text generation (e.g. free model with :free suffix)
+    openrouter_free_model: str | None = None
     openrouter_timeout_seconds: float = 90.0
+
+    # Telegram Stars prices for premium reports (currency XTR)
+    stars_price_natal_premium: int = 49
+    stars_price_tarot_premium: int = 29
+    stars_price_numerology_premium: int = 29
 
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()

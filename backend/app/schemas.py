@@ -21,6 +21,14 @@ class BirthProfileCreateRequest(BaseModel):
         return v
 
 
+_VALID_MBTI = {
+    "INTJ", "INTP", "ENTJ", "ENTP",
+    "INFJ", "INFP", "ENFJ", "ENFP",
+    "ISTJ", "ISFJ", "ESTJ", "ESFJ",
+    "ISTP", "ISFP", "ESTP", "ESFP",
+}
+
+
 class UserSyncRequest(BaseModel):
     first_name: str | None = Field(default=None, max_length=255)
     last_name: str | None = Field(default=None, max_length=255)
@@ -29,6 +37,17 @@ class UserSyncRequest(BaseModel):
     is_premium: bool | None = None
     allows_write_to_pm: bool | None = None
     photo_url: str | None = Field(default=None, max_length=1000)
+    mbti_type: str | None = Field(default=None, max_length=4)
+
+    @field_validator("mbti_type")
+    @classmethod
+    def mbti_type_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().upper()
+        if v not in _VALID_MBTI:
+            raise ValueError(f"mbti_type must be one of {sorted(_VALID_MBTI)}")
+        return v
 
     @field_validator("first_name", "last_name", "username", "language_code", "photo_url")
     @classmethod
@@ -53,6 +72,7 @@ class UserResponse(BaseModel):
     is_premium: bool | None
     allows_write_to_pm: bool | None
     photo_url: str | None
+    mbti_type: str | None
     created_at: datetime
     updated_at: datetime
     last_seen_at: datetime | None
@@ -175,6 +195,59 @@ class TaskStatusResponse(BaseModel):
     status: Literal["pending", "done", "failed"]
     result: dict[str, Any] | None = None
     error: str | None = None
+
+
+PremiumFeatureCode = Literal["natal_premium", "tarot_premium", "numerology_premium"]
+
+
+class StarsCatalogItem(BaseModel):
+    feature: PremiumFeatureCode
+    amount_stars: int
+    currency: Literal["XTR"] = "XTR"
+    title: str
+    description: str
+
+
+class StarsCatalogResponse(BaseModel):
+    items: list[StarsCatalogItem]
+
+
+class StarsInvoiceCreateRequest(BaseModel):
+    feature: PremiumFeatureCode
+
+
+class StarsInvoiceResponse(BaseModel):
+    payment_id: UUID
+    feature: PremiumFeatureCode
+    amount_stars: int
+    currency: str
+    status: str
+    invoice_link: str
+
+
+class StarsPaymentStatusResponse(BaseModel):
+    payment_id: UUID
+    feature: PremiumFeatureCode
+    amount_stars: int
+    currency: str
+    status: str
+    paid_at: datetime | None = None
+    consumed_at: datetime | None = None
+
+
+class TelegramStarsPaymentConfirmRequest(BaseModel):
+    invoice_payload: str = Field(min_length=1, max_length=128)
+    tg_user_id: int | None = None
+    currency: str = Field(min_length=1, max_length=8)
+    total_amount: int = Field(ge=1)
+    telegram_payment_charge_id: str | None = Field(default=None, max_length=255)
+    provider_payment_charge_id: str | None = Field(default=None, max_length=255)
+
+
+class TelegramStarsPaymentConfirmResponse(BaseModel):
+    ok: bool = True
+    payment_id: UUID
+    status: str
 
 
 class NumerologyCalculateRequest(BaseModel):

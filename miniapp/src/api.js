@@ -1,5 +1,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const DEV_AUTH_ALLOWED = import.meta.env.VITE_ALLOW_DEV_AUTH === 'true';
+const USER_LANG_STORAGE_KEY = 'astrobot_user_language_code';
+const PENDING_STARS_PAYMENT_STORAGE_KEY = 'astrobot_pending_stars_payment_v1';
 
 // Default request timeout (90s — long enough for LLM fallback paths)
 const REQUEST_TIMEOUT_MS = 90_000;
@@ -44,10 +46,40 @@ export function resolveTgUserId() {
   return localStorage.getItem('dev_tg_user_id') || '999001';
 }
 
+function normalizeLanguageCode(raw) {
+  const source = String(raw || '').trim().toLowerCase();
+  if (!source) return 'ru';
+  const first = source.split(',')[0].split(';')[0].trim().replace('_', '-');
+  const base = first.split('-')[0];
+  return /^[a-z]{2,3}$/.test(base) ? base : 'ru';
+}
+
+export function resolveUserLanguageCode() {
+  const fromTelegram = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
+  if (fromTelegram) return normalizeLanguageCode(fromTelegram);
+
+  const fromStorage = localStorage.getItem(USER_LANG_STORAGE_KEY);
+  if (fromStorage) return normalizeLanguageCode(fromStorage);
+
+  return normalizeLanguageCode(window.navigator?.language);
+}
+
+export function persistUserLanguageCode(languageCode) {
+  const normalized = normalizeLanguageCode(languageCode);
+  try {
+    localStorage.setItem(USER_LANG_STORAGE_KEY, normalized);
+  } catch {
+    // ignore storage errors
+  }
+  return normalized;
+}
+
 function buildHeaders(options = {}) {
   const initData = getTelegramInitData();
+  const userLang = resolveUserLanguageCode();
   const headers = {
     'Content-Type': 'application/json',
+    'X-User-Language': userLang,
     ...(options.headers || {}),
   };
 
@@ -142,12 +174,194 @@ export async function pollTask(taskId, intervalMs = 2000, timeoutMs = 120_000) {
   throw new ApiError('Превышено время ожидания ответа от сервера', 408, null);
 }
 
+function withQueryParam(path, key, value) {
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`;
+}
+
+function readPendingStarsPayment() {
+  try {
+    const raw = localStorage.getItem(PENDING_STARS_PAYMENT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingStarsPayment(data) {
+  try {
+    localStorage.setItem(PENDING_STARS_PAYMENT_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clearPendingStarsPayment() {
+  try {
+    localStorage.removeItem(PENDING_STARS_PAYMENT_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function isRetriableInvoiceOpenStatus(status) {
+  return status === 'paid' || status === 'pending';
+}
+
+function assertInvoiceOpenStatus(status, invoice) {
+  if (isRetriableInvoiceOpenStatus(status)) return;
+  if (status === 'cancelled') {
+    throw new ApiError('Оплата отменена. Можно нажать кнопку ещё раз, чтобы продолжить по этому же счёту.', 402, invoice);
+  }
+  throw new ApiError(`Оплата не завершена (${status}).`, 402, invoice);
+}
+
+function openTelegramInvoice(invoiceLink) {
+  const tg = window.Telegram?.WebApp;
+  if (tg?.openInvoice) {
+    return new Promise((resolve, reject) => {
+      try {
+        tg.openInvoice(invoiceLink, (status) => resolve(String(status || 'unknown')));
+      } catch (err) {
+        reject(new ApiError(String(err?.message || err || 'Не удалось открыть счёт'), 0, null));
+      }
+    });
+  }
+
+  if (tg?.openTelegramLink) {
+    try {
+      tg.openTelegramLink(invoiceLink);
+      return Promise.resolve('pending');
+    } catch (err) {
+      throw new ApiError(String(err?.message || err || 'Не удалось открыть счёт'), 0, null);
+    }
+  }
+
+  if (tg?.openLink) {
+    try {
+      tg.openLink(invoiceLink);
+      return Promise.resolve('pending');
+    } catch (err) {
+      throw new ApiError(String(err?.message || err || 'Не удалось открыть счёт'), 0, null);
+    }
+  }
+
+  if (tg) {
+    // Old Telegram clients may not expose openInvoice/openTelegramLink.
+    window.location.href = invoiceLink;
+    return Promise.resolve('pending');
+  }
+
+  throw new ApiError(
+    'Оплата Stars доступна только внутри Telegram Mini App.',
+    400,
+    null,
+  );
+}
+
+async function createStarsInvoice(feature) {
+  return apiRequest('/v1/payments/stars/invoice', {
+    method: 'POST',
+    body: JSON.stringify({ feature }),
+  });
+}
+
+export async function fetchStarsCatalog() {
+  return apiRequest('/v1/payments/stars/catalog');
+}
+
+async function fetchStarsPaymentStatus(paymentId) {
+  return apiRequest(`/v1/payments/stars/${encodeURIComponent(paymentId)}`);
+}
+
+async function waitForStarsPaymentConfirmation(paymentId, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const data = await fetchStarsPaymentStatus(paymentId);
+    if (data?.status === 'paid' || data?.status === 'consumed') return data;
+    if (data?.status === 'failed' || data?.status === 'cancelled') {
+      throw new ApiError('Оплата не была подтверждена.', 402, data);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new ApiError('Оплата прошла, но сервер ещё не получил подтверждение. Не оплачивайте повторно: попробуйте ещё раз через несколько секунд.', 409, null);
+}
+
+async function resumePendingStarsPayment(feature) {
+  const pending = readPendingStarsPayment();
+  if (!pending) return null;
+  if (pending.feature !== feature) return null;
+
+  const createdAt = Number(pending.created_at_ms || 0);
+  if (createdAt > 0 && Date.now() - createdAt > 24 * 60 * 60 * 1000) {
+    clearPendingStarsPayment();
+    return null;
+  }
+
+  let status;
+  try {
+    status = await fetchStarsPaymentStatus(pending.payment_id);
+  } catch (err) {
+    if (err?.status === 404) {
+      clearPendingStarsPayment();
+      return null;
+    }
+    throw err;
+  }
+
+  if (status?.status === 'paid' || status?.status === 'consumed') {
+    clearPendingStarsPayment();
+    return String(pending.payment_id);
+  }
+  if (status?.status === 'failed' || status?.status === 'cancelled') {
+    clearPendingStarsPayment();
+    return null;
+  }
+
+  if (pending.invoice_link) {
+    const invoiceStatus = await openTelegramInvoice(pending.invoice_link);
+    assertInvoiceOpenStatus(invoiceStatus, pending);
+  }
+
+  await waitForStarsPaymentConfirmation(pending.payment_id);
+  clearPendingStarsPayment();
+  return String(pending.payment_id);
+}
+
+async function payStarsForFeature(feature) {
+  const resumedPaymentId = await resumePendingStarsPayment(feature);
+  if (resumedPaymentId) return resumedPaymentId;
+
+  const invoice = await createStarsInvoice(feature);
+  if (!invoice?.payment_id || !invoice?.invoice_link) {
+    throw new ApiError('Сервер не смог создать счёт Stars.', 500, invoice);
+  }
+
+  writePendingStarsPayment({
+    feature,
+    payment_id: String(invoice.payment_id),
+    invoice_link: String(invoice.invoice_link),
+    created_at_ms: Date.now(),
+  });
+
+  const invoiceStatus = await openTelegramInvoice(invoice.invoice_link);
+  assertInvoiceOpenStatus(invoiceStatus, invoice);
+
+  await waitForStarsPaymentConfirmation(invoice.payment_id);
+  clearPendingStarsPayment();
+  return String(invoice.payment_id);
+}
+
 /**
  * Request premium natal chart via OpenRouter Gemini. Polls until complete.
  * @returns {Promise<object>} - result with {type:"natal_premium", report:{...}, sun_sign, moon_sign, rising_sign}
  */
 export async function fetchNatalPremium() {
-  const data = await apiRequest('/v1/natal/full/premium');
+  const paymentId = await payStarsForFeature('natal_premium');
+  const data = await apiRequest(withQueryParam('/v1/natal/full/premium', 'payment_id', paymentId));
   if (data.status === 'pending') {
     return await pollTask(data.task_id, 2000, 180_000);
   }
@@ -161,7 +375,8 @@ export async function fetchNatalPremium() {
  * @returns {Promise<object>} - result with {type:"tarot_premium", cards, report, question, ...}
  */
 export async function fetchTarotPremium(spreadType = 'three_card', question = '') {
-  const data = await apiRequest('/v1/tarot/premium', {
+  const paymentId = await payStarsForFeature('tarot_premium');
+  const data = await apiRequest(withQueryParam('/v1/tarot/premium', 'payment_id', paymentId), {
     method: 'POST',
     body: JSON.stringify({ spread_type: spreadType, question: question || null }),
   });
@@ -194,7 +409,8 @@ export async function calculateNumerology(fullName, birthDate) {
  * @returns {Promise<object>} - result with {type:"numerology_premium", numbers:{...}, report:{...10 keys...}}
  */
 export async function fetchNumerologyPremium(fullName, birthDate) {
-  const data = await apiRequest('/v1/numerology/premium', {
+  const paymentId = await payStarsForFeature('numerology_premium');
+  const data = await apiRequest(withQueryParam('/v1/numerology/premium', 'payment_id', paymentId), {
     method: 'POST',
     body: JSON.stringify({ full_name: fullName, birth_date: birthDate }),
   });
@@ -202,4 +418,24 @@ export async function fetchNumerologyPremium(fullName, birthDate) {
     return await pollTask(data.task_id, 2000, 180_000);
   }
   return data;
+}
+
+/**
+ * Fetch user's report history from Redis (last 14 days).
+ * @returns {Promise<{reports: Array}>}
+ */
+export async function fetchUserHistory() {
+  return apiRequest('/v1/users/me/history');
+}
+
+/**
+ * Save user's MBTI archetype type.
+ * @param {string} mbtiType - 4-letter MBTI code, e.g. "INTJ"
+ * @returns {Promise<object>} - updated user object
+ */
+export async function saveUserMbtiType(mbtiType) {
+  return apiRequest('/v1/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ mbti_type: mbtiType }),
+  });
 }

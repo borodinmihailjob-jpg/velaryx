@@ -90,6 +90,7 @@ async def get_forecast_stories(
             key_aspects=aspects_list,
             fallback_slides_json=json.dumps(static_fallback, ensure_ascii=False),
             llm_provider_label=llm_provider_label(),
+            mbti_type=user.mbti_type,
         )
         logger.info("Stories LLM enqueued | user_id=%s | job_id=%s", user.id, job.job_id)
         return JSONResponse({"status": "pending", "task_id": job.job_id})

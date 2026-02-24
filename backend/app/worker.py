@@ -8,6 +8,7 @@ from typing import Any
 from arq.connections import RedisSettings
 
 from .config import settings
+from .history import save_report_to_history
 from .llm_engine import (
     interpret_natal_sections_async,
     interpret_natal_premium_async,
@@ -21,11 +22,17 @@ logger = logging.getLogger("astrobot.worker")
 
 ARQ_TASK_TTL = 600  # 10 minutes — long enough for frontend polling
 
+PREMIUM_LLM_FAILURE_MESSAGE = (
+    "Премиум-функция временно недоступна: сбой при обращении к OpenRouter. "
+    "Попробуйте еще раз через 1-2 минуты."
+)
+
 
 async def task_generate_natal(
     ctx: dict[str, Any],
     *,
     user_id: int,
+    tg_user_id: int,
     chart_id: str,
     profile_id: str,
     sun_sign: str,
@@ -107,6 +114,16 @@ async def task_generate_natal(
     task_key = f"arq_task:{job_id}"
     task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
     await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+
+    await save_report_to_history(
+        redis=redis,
+        tg_user_id=tg_user_id,
+        report_type="natal_basic",
+        report_id=chart_id,
+        is_premium=False,
+        summary={"sun_sign": sun_sign, "moon_sign": moon_sign, "rising_sign": rising_sign},
+    )
+
     logger.info("Worker: task_generate_natal done | user_id=%s | job_id=%s", user_id, job_id)
     return result
 
@@ -126,6 +143,7 @@ async def task_generate_stories(
     key_aspects: list[str],
     fallback_slides_json: str,  # pre-built static fallback
     llm_provider_label: str | None,
+    mbti_type: str | None = None,
 ) -> dict[str, Any]:
     job_id: str = ctx["job_id"]
     redis = ctx["redis"]
@@ -141,6 +159,7 @@ async def task_generate_stories(
         focus=focus,
         natal_summary=natal_summary,
         key_aspects=key_aspects,
+        mbti_type=mbti_type,
     )
 
     if llm_slides:
@@ -278,6 +297,7 @@ async def task_generate_numerology_premium(
     ctx: dict[str, Any],
     *,
     user_id: int,
+    tg_user_id: int,
     full_name: str,
     birth_date: str,
     life_path: int,
@@ -315,6 +335,10 @@ async def task_generate_numerology_premium(
         logger.info("Worker: numerology premium LLM success | user_id=%s | job_id=%s", user_id, job_id)
     else:
         logger.error("Worker: numerology premium LLM failed | user_id=%s | job_id=%s", user_id, job_id)
+        task_key = f"arq_task:{job_id}"
+        task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
+        await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        return {"type": "numerology_premium", "numbers": {}, "report": None}
 
     result = {
         "type": "numerology_premium",
@@ -332,6 +356,32 @@ async def task_generate_numerology_premium(
     task_key = f"arq_task:{job_id}"
     task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
     await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+
+    report_preview = ""
+    if isinstance(report, dict):
+        for key in ("core_essence", "life_purpose", "strengths"):
+            val = report.get(key)
+            if isinstance(val, str) and val.strip():
+                report_preview = val.strip()[:120]
+                break
+    await save_report_to_history(
+        redis=redis,
+        tg_user_id=tg_user_id,
+        report_type="numerology_premium",
+        report_id=f"{tg_user_id}_{birth_date}",
+        is_premium=True,
+        summary={
+            "numbers": {
+                "life_path": life_path,
+                "expression": expression,
+                "soul_urge": soul_urge,
+                "personality": personality,
+                "birthday": birthday,
+            },
+            "report_preview": report_preview,
+        },
+    )
+
     logger.info("Worker: task_generate_numerology_premium done | user_id=%s | job_id=%s", user_id, job_id)
     return result
 
@@ -340,6 +390,7 @@ async def task_generate_natal_premium(
     ctx: dict[str, Any],
     *,
     user_id: int,
+    tg_user_id: int,
     chart_id: str,
     profile_id: str,
     sun_sign: str,
@@ -388,6 +439,18 @@ async def task_generate_natal_premium(
         logger.info("Worker: natal premium LLM success | user_id=%s | job_id=%s", user_id, job_id)
     else:
         logger.error("Worker: natal premium LLM failed | user_id=%s | job_id=%s", user_id, job_id)
+        task_key = f"arq_task:{job_id}"
+        task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
+        await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        return {
+            "type": "natal_premium",
+            "sun_sign": sun_sign,
+            "moon_sign": moon_sign,
+            "rising_sign": rising_sign,
+            "report": None,
+            "wheel_chart_url": wheel_chart_url,
+            "created_at": created_at,
+        }
 
     result = {
         "type": "natal_premium",
@@ -402,6 +465,28 @@ async def task_generate_natal_premium(
     task_key = f"arq_task:{job_id}"
     task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
     await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+
+    report_preview = ""
+    if isinstance(report, dict):
+        for key in ("core_essence", "life_mission", "strengths"):
+            val = report.get(key)
+            if isinstance(val, str) and val.strip():
+                report_preview = val.strip()[:120]
+                break
+    await save_report_to_history(
+        redis=redis,
+        tg_user_id=tg_user_id,
+        report_type="natal_premium",
+        report_id=chart_id,
+        is_premium=True,
+        summary={
+            "sun_sign": sun_sign,
+            "moon_sign": moon_sign,
+            "rising_sign": rising_sign,
+            "report_preview": report_preview,
+        },
+    )
+
     logger.info("Worker: task_generate_natal_premium done | user_id=%s | job_id=%s", user_id, job_id)
     return result
 
@@ -410,6 +495,8 @@ async def task_generate_tarot_premium(
     ctx: dict[str, Any],
     *,
     user_id: int,
+    tg_user_id: int,
+    session_id: str,
     question: str | None,
     spread_type: str,
     cards: list[dict[str, Any]],
@@ -425,6 +512,17 @@ async def task_generate_tarot_premium(
         logger.info("Worker: tarot premium LLM success | user_id=%s | job_id=%s", user_id, job_id)
     else:
         logger.error("Worker: tarot premium LLM failed | user_id=%s | job_id=%s", user_id, job_id)
+        task_key = f"arq_task:{job_id}"
+        task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
+        await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        return {
+            "type": "tarot_premium",
+            "question": question,
+            "spread_type": spread_type,
+            "cards": cards,
+            "report": None,
+            "created_at": created_at,
+        }
 
     result = {
         "type": "tarot_premium",
@@ -437,6 +535,32 @@ async def task_generate_tarot_premium(
     task_key = f"arq_task:{job_id}"
     task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
     await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+
+    report_preview = ""
+    if isinstance(report, dict):
+        for key in ("synthesis", "overall_energy", "advice"):
+            val = report.get(key)
+            if isinstance(val, str) and val.strip():
+                report_preview = val.strip()[:120]
+                break
+    cards_summary = [
+        {"card_name": c.get("card_name", ""), "is_reversed": c.get("is_reversed", False), "slot_label": c.get("slot_label", "")}
+        for c in (cards or [])
+    ]
+    await save_report_to_history(
+        redis=redis,
+        tg_user_id=tg_user_id,
+        report_type="tarot_premium",
+        report_id=session_id,
+        is_premium=True,
+        summary={
+            "spread_type": spread_type,
+            "question": question,
+            "cards": cards_summary,
+            "report_preview": report_preview,
+        },
+    )
+
     logger.info("Worker: task_generate_tarot_premium done | user_id=%s | job_id=%s", user_id, job_id)
     return result
 
@@ -455,4 +579,6 @@ class WorkerSettings:
     on_startup = on_worker_startup
     on_shutdown = on_worker_shutdown
     max_tries = 1  # LLM calls are expensive; don't retry automatically
-    job_timeout = 120  # 2 minutes max per job
+    # Local CPU Ollama (cold start + long prompts) can exceed 2 minutes.
+    # Keep this above OLLAMA_TIMEOUT_SECONDS to avoid ARQ cancelling valid work.
+    job_timeout = 300

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, services
 from ..database import get_db
 from ..dependencies import current_user_dep, get_auth_context
+from ..history import get_user_history
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 
@@ -19,6 +20,7 @@ def _user_response(user: models.User) -> schemas.UserResponse:
         is_premium=user.is_premium,
         allows_write_to_pm=user.allows_write_to_pm,
         photo_url=user.photo_url,
+        mbti_type=user.mbti_type,
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_seen_at=user.last_seen_at,
@@ -54,6 +56,17 @@ def patch_me(
     if patch:
         user = services.update_user_fields(db, user, patch)
     return _user_response(user)
+
+
+@router.get("/me/history")
+async def get_my_history(
+    request: Request,
+    user: models.User = Depends(current_user_dep),
+):
+    """Return the user's report history from Redis (last 14 days)."""
+    redis = getattr(request.app.state, "arq_pool", None)
+    reports = await get_user_history(redis, tg_user_id=user.tg_user_id)
+    return {"reports": reports}
 
 
 @router.delete("/me", response_model=schemas.UserDeleteResponse)

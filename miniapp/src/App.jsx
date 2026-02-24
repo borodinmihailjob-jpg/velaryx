@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-import { apiRequest, pollTask, calculateNumerology, fetchNatalPremium, fetchTarotPremium, fetchNumerologyPremium } from './api';
+import {
+  apiRequest,
+  pollTask,
+  calculateNumerology,
+  fetchNatalPremium,
+  fetchTarotPremium,
+  fetchNumerologyPremium,
+  fetchStarsCatalog,
+  fetchUserHistory,
+  saveUserMbtiType,
+  persistUserLanguageCode,
+  resolveUserLanguageCode,
+} from './api';
+import { translateFixedUiText, useUiAutoTranslate } from './ui_i18n';
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'replace_me_bot';
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'app';
 const TAROT_LOADING_GIF = import.meta.env.VITE_TAROT_LOADING_GIF || '/tarot-loader.gif';
 const NATAL_LOADING_GIF = import.meta.env.VITE_NATAL_LOADING_GIF || '/natal-loader.gif';
+const NUMEROLOGY_LOADING_GIF = import.meta.env.VITE_NUMEROLOGY_LOADING_GIF || '/numerolog-loader.gif';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20, scale: 0.98 },
@@ -60,6 +74,16 @@ const VIEW_TELEMETRY_EVENTS = {
   numerology: 'open_numerology_screen'
 };
 
+function getStarsPrice(starsPrices, feature) {
+  const value = starsPrices?.[feature];
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function premiumButtonLabel(baseText, starsPrices, feature) {
+  const price = getStarsPrice(starsPrices, feature);
+  return price ? `${baseText} • ${price} ⭐` : baseText;
+}
+
 const NUMEROLOGY_LOADING_HINTS = [
   'Числа раскрывают тайный код твоей судьбы...',
   'Пифагор знал: каждая цифра — вибрация вселенной...',
@@ -73,6 +97,52 @@ const NUMEROLOGY_ARCHETYPES = {
   5: 'Авантюрист', 6: 'Гармонизатор', 7: 'Мистик', 8: 'Властелин',
   9: 'Мудрец', 11: 'Интуит', 22: 'Великий Строитель', 33: 'Учитель'
 };
+
+const MBTI_ARCHETYPES = {
+  INTJ: { name: 'Архитектор', desc: 'Стратег, ценящий независимость и долгосрочное планирование' },
+  INTP: { name: 'Логик', desc: 'Аналитик, ищущий системы и закономерности' },
+  ENTJ: { name: 'Командир', desc: 'Лидер, нацеленный на эффективность и результат' },
+  ENTP: { name: 'Полемист', desc: 'Генератор идей и нестандартных решений' },
+  INFJ: { name: 'Провидец', desc: 'Глубоко интуитивный искатель смысла' },
+  INFP: { name: 'Медиатор', desc: 'Живёт ценностями и внутренней гармонией' },
+  ENFJ: { name: 'Протагонист', desc: 'Вдохновляет людей и строит связи' },
+  ENFP: { name: 'Активист', desc: 'Заряжен энтузиазмом и стремлением к новому' },
+  ISTJ: { name: 'Страж', desc: 'Надёжный, действует по проверенным правилам' },
+  ISFJ: { name: 'Защитник', desc: 'Заботится о близких и стабильности' },
+  ESTJ: { name: 'Администратор', desc: 'Структурирует мир вокруг порядка' },
+  ESFJ: { name: 'Консул', desc: 'Ориентирован на гармонию и отношения' },
+  ISTP: { name: 'Виртуоз', desc: 'Мастер практических решений здесь и сейчас' },
+  ISFP: { name: 'Искатель', desc: 'Живёт чувствами и красотой момента' },
+  ESTP: { name: 'Делец', desc: 'Действует быстро и любит риск' },
+  ESFP: { name: 'Артист', desc: 'Ищет радость и живёт в настоящем' },
+};
+
+const ARCHETYPE_QUIZ_QUESTIONS = [
+  {
+    id: 'ei',
+    question: 'Восстанавливаясь после трудного дня, ты...',
+    a: { label: 'Тянешься к людям', letter: 'E' },
+    b: { label: 'Уходишь в себя', letter: 'I' },
+  },
+  {
+    id: 'sn',
+    question: 'В гороскопе тебя притягивает...',
+    a: { label: 'Конкретные советы на день', letter: 'S' },
+    b: { label: 'Скрытые символы и архетипы', letter: 'N' },
+  },
+  {
+    id: 'tf',
+    question: 'Сложный выбор ты делаешь через...',
+    a: { label: 'Логику и холодный анализ', letter: 'T' },
+    b: { label: 'Внутреннее ощущение правоты', letter: 'F' },
+  },
+  {
+    id: 'jp',
+    question: 'Твой путь к цели...',
+    a: { label: 'Чёткий план шаг за шагом', letter: 'J' },
+    b: { label: 'Открытость к знакам судьбы', letter: 'P' },
+  },
+];
 
 const NUMEROLOGY_GRADIENTS = {
   1: 'linear-gradient(135deg, #FF6B35 0%, #FFD700 100%)',
@@ -123,6 +193,13 @@ const PREMIUM_TAROT_LOADING_HINTS = [
   'Синтезируем скрытые послания расклада...',
   'Формируем практические рекомендации...',
   'Финальный штрих — отчёт почти готов...'
+];
+
+const TAROT_LOADING_HINTS = [
+  'Перемешиваем колоду и настраиваемся на вопрос...',
+  'Карты занимают свои места в раскладе...',
+  'Считываем связку прошлого, настоящего и будущего...',
+  'Послание карт почти готово...'
 ];
 
 const PREMIUM_NUMEROLOGY_LOADING_HINTS = [
@@ -292,9 +369,17 @@ function Hint({ text }) {
   );
 }
 
-function Shell({ title, subtitle, children, onBack, className = '' }) {
+function Shell({ title, subtitle, children, onBack, className = '', showTabBar = false }) {
   return (
-    <motion.div role="main" className={`screen ${className}`.trim()} variants={pageVariants} initial="initial" animate="animate" exit="exit">
+    <motion.div
+      role="main"
+      className={`screen ${className}`.trim()}
+      variants={pageVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      style={showTabBar ? { paddingBottom: 72 } : undefined}
+    >
       <header className="screen-head">
         <div>
           {onBack && (
@@ -307,6 +392,83 @@ function Shell({ title, subtitle, children, onBack, className = '' }) {
         </div>
       </header>
       {children}
+    </motion.div>
+  );
+}
+
+function UnifiedLoadingStage({
+  gifSrc,
+  fallbackGifSrc = '',
+  gifAlt = 'Loading',
+  placeholder = '✦',
+  title,
+  titleColor,
+  hints = [],
+  hintIndex = 0,
+}) {
+  const [gifFailed, setGifFailed] = useState(false);
+  const [fallbackTried, setFallbackTried] = useState(false);
+
+  useEffect(() => {
+    setGifFailed(false);
+    setFallbackTried(false);
+  }, [gifSrc, fallbackGifSrc]);
+
+  const canTryFallback = Boolean(fallbackGifSrc && fallbackGifSrc !== gifSrc);
+  const activeGifSrc = fallbackTried && canTryFallback ? fallbackGifSrc : gifSrc;
+
+  return (
+    <motion.div
+      className="natal-loader"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      {!gifFailed && activeGifSrc ? (
+        <motion.div
+          className="natal-loader-gif-stage"
+          initial={{ opacity: 0.6, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35 }}
+        >
+          <img
+            className="natal-loader-gif"
+            src={activeGifSrc}
+            alt={gifAlt}
+            loading="eager"
+            onError={() => {
+              if (!fallbackTried && canTryFallback) {
+                setFallbackTried(true);
+                return;
+              }
+              setGifFailed(true);
+            }}
+          />
+        </motion.div>
+      ) : (
+        <div className="natal-loader-placeholder">{placeholder}</div>
+      )}
+
+      {title && (
+        <p className="natal-loader-title" style={titleColor ? { color: titleColor } : undefined}>
+          {title}
+        </p>
+      )}
+
+      {hints.length > 0 && (
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={hintIndex}
+            className="natal-loader-hint"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+          >
+            {hints[hintIndex % hints.length]}
+          </motion.p>
+        </AnimatePresence>
+      )}
     </motion.div>
   );
 }
@@ -1210,27 +1372,17 @@ function Numerology({ onBack, onMissingProfile }) {
   return (
     <Shell title="Нумерология" subtitle={`Числовой код: ${nameInput.trim()}`} onBack={() => setStep(0)}>
       <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
-        {interpretationLoading && (
-          <motion.div
-            className="numerology-interp-banner"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={hintIndex}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                {NUMEROLOGY_LOADING_HINTS[hintIndex]}
-              </motion.span>
-            </AnimatePresence>
-          </motion.div>
-        )}
-
-        {numbers && NUMEROLOGY_ORDER.map((key) => (
+        {interpretationLoading ? (
+          <UnifiedLoadingStage
+            gifSrc={NUMEROLOGY_LOADING_GIF}
+            fallbackGifSrc={NATAL_LOADING_GIF}
+            gifAlt="Numerology loading"
+            placeholder="🔢"
+            title="Считываем числовой код..."
+            hints={NUMEROLOGY_LOADING_HINTS}
+            hintIndex={hintIndex}
+          />
+        ) : numbers && NUMEROLOGY_ORDER.map((key) => (
           <NumerologyCard
             key={key}
             numberKey={key}
@@ -1254,7 +1406,7 @@ function Numerology({ onBack, onMissingProfile }) {
 
 // ── Premium numerology: mode selector ────────────────────────────────
 
-function NumerologyModeSelect({ onBack, onBasic, onPremium }) {
+function NumerologyModeSelect({ onBack, onBasic, onPremium, starsPrices }) {
   const goldBorder = {
     background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
     border: '1px solid rgba(245,158,11,0.4)',
@@ -1326,7 +1478,7 @@ function NumerologyModeSelect({ onBack, onBasic, onPremium }) {
               fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em'
             }}
           >
-            Получить анализ ✦
+            {premiumButtonLabel('Получить анализ ✦', starsPrices, 'numerology_premium')}
           </motion.button>
         </motion.div>
 
@@ -1346,7 +1498,7 @@ const _PREMIUM_NUM_KEYS = [
   { key: 'personal_year_deep',numKey: 'personal_year',label: 'Личный Год',      icon: '🗓️' },
 ];
 
-function NumerologyPremiumReport({ onBack, onMissingProfile }) {
+function NumerologyPremiumReport({ onBack, onMissingProfile, starsPrices }) {
   const [nameInput, setNameInput] = useState('');
   const [birthDateInput, setBirthDateInput] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
@@ -1436,7 +1588,7 @@ function NumerologyPremiumReport({ onBack, onMissingProfile }) {
           </label>
           {error && <p className="error" role="alert">{error}</p>}
           <button className="cta" onClick={handleSubmit} disabled={!canSubmit}>
-            Получить анализ ✦
+            {premiumButtonLabel('Получить анализ ✦', starsPrices, 'numerology_premium')}
           </button>
         </div>
       </Shell>
@@ -1446,19 +1598,16 @@ function NumerologyPremiumReport({ onBack, onMissingProfile }) {
   if (loading) {
     return (
       <Shell title="Глубокий анализ" subtitle="Нумерология от Gemini" onBack={onBack}>
-        <motion.div className="natal-loader" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-          <div className="natal-loader-placeholder" style={{ fontSize: 32 }}>✦</div>
-          <p className="natal-loader-title" style={{ color: gold }}>Gemini анализирует числа...</p>
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={hintIndex} className="natal-loader-hint"
-              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
-            >
-              {PREMIUM_NUMEROLOGY_LOADING_HINTS[hintIndex]}
-            </motion.p>
-          </AnimatePresence>
-        </motion.div>
+        <UnifiedLoadingStage
+          gifSrc={NUMEROLOGY_LOADING_GIF}
+          fallbackGifSrc={NATAL_LOADING_GIF}
+          gifAlt="Premium numerology loading"
+          placeholder="✦"
+          title="Gemini анализирует числа..."
+          titleColor={gold}
+          hints={PREMIUM_NUMEROLOGY_LOADING_HINTS}
+          hintIndex={hintIndex}
+        />
       </Shell>
     );
   }
@@ -1594,7 +1743,8 @@ function Dashboard({
   onOpenNumerology,
   onEditBirthData,
   onDeleteProfile,
-  deletingProfile
+  deletingProfile,
+  showTabBar = false,
 }) {
   const menuItems = [
     { icon: '✨', label: 'Натальная карта', hint: 'Полный персональный разбор', action: onOpenNatal },
@@ -1619,7 +1769,7 @@ function Dashboard({
   const todayFocus = dailyForecast?.payload?.focus ?? null;
 
   return (
-    <Shell title="Velaryx" subtitle="Твой проводник в нитях судьбы">
+    <Shell title="Velaryx " subtitle="Твой проводник в нитях судьбы" showTabBar={showTabBar}>
       <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
 
         {/* HERO CARD: Daily Energy */}
@@ -1764,11 +1914,6 @@ function NatalChart({ onBack, onMissingProfile }) {
   const [error, setError] = useState('');
   const [chart, setChart] = useState(null);
   const [hintIndex, setHintIndex] = useState(0);
-  const [natalGifFailed, setNatalGifFailed] = useState(false);
-  const [natalGifFallbackTried, setNatalGifFallbackTried] = useState(false);
-
-  const natalLoaderSrc = natalGifFallbackTried ? TAROT_LOADING_GIF : NATAL_LOADING_GIF;
-
   const loadChart = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -1822,50 +1967,15 @@ function NatalChart({ onBack, onMissingProfile }) {
   return (
     <Shell title="Натальная карта" subtitle="Подробный персональный разбор" onBack={onBack}>
       {loading && (
-        <motion.div
-          className="natal-loader"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {!natalGifFailed && natalLoaderSrc ? (
-            <motion.div
-              className="natal-loader-gif-stage"
-              initial={{ opacity: 0.6, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.35 }}
-            >
-              <img
-                className="natal-loader-gif"
-                src={natalLoaderSrc}
-                alt="Natal loading"
-                loading="eager"
-                onError={() => {
-                  if (!natalGifFallbackTried && TAROT_LOADING_GIF && TAROT_LOADING_GIF !== NATAL_LOADING_GIF) {
-                    setNatalGifFallbackTried(true);
-                    return;
-                  }
-                  setNatalGifFailed(true);
-                }}
-              />
-            </motion.div>
-          ) : (
-            <div className="natal-loader-placeholder">🌙</div>
-          )}
-          <p className="natal-loader-title">Читаем звёздный узор...</p>
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={hintIndex}
-              className="natal-loader-hint"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
-            >
-              {NATAL_LOADING_HINTS[hintIndex]}
-            </motion.p>
-          </AnimatePresence>
-        </motion.div>
+        <UnifiedLoadingStage
+          gifSrc={NATAL_LOADING_GIF}
+          fallbackGifSrc={TAROT_LOADING_GIF}
+          gifAlt="Natal loading"
+          placeholder="🌙"
+          title="Читаем звёздный узор..."
+          hints={NATAL_LOADING_HINTS}
+          hintIndex={hintIndex}
+        />
       )}
 
       {error && (
@@ -1903,7 +2013,7 @@ function NatalChart({ onBack, onMissingProfile }) {
 
 // ── Premium natal: mode selector ────────────────────────────────────
 
-function NatalModeSelect({ onBack, onBasic, onPremium }) {
+function NatalModeSelect({ onBack, onBasic, onPremium, starsPrices }) {
   const goldBorder = {
     background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
     border: '1px solid rgba(245,158,11,0.4)',
@@ -1987,7 +2097,7 @@ function NatalModeSelect({ onBack, onBasic, onPremium }) {
               fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em'
             }}
           >
-            Получить отчёт ⭐
+            {premiumButtonLabel('Получить отчёт', starsPrices, 'natal_premium')}
           </motion.button>
         </motion.div>
 
@@ -2064,19 +2174,16 @@ function NatalPremiumReport({ onBack, onMissingProfile }) {
 
       {/* Loading */}
       {loading && (
-        <motion.div className="natal-loader" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-          <div className="natal-loader-placeholder" style={{ fontSize: 32 }}>⭐</div>
-          <p className="natal-loader-title" style={{ color: gold }}>Gemini анализирует карту...</p>
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={hintIndex} className="natal-loader-hint"
-              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
-            >
-              {PREMIUM_NATAL_LOADING_HINTS[hintIndex]}
-            </motion.p>
-          </AnimatePresence>
-        </motion.div>
+        <UnifiedLoadingStage
+          gifSrc={NATAL_LOADING_GIF}
+          fallbackGifSrc={TAROT_LOADING_GIF}
+          gifAlt="Premium natal loading"
+          placeholder="⭐"
+          title="Gemini анализирует карту..."
+          titleColor={gold}
+          hints={PREMIUM_NATAL_LOADING_HINTS}
+          hintIndex={hintIndex}
+        />
       )}
 
       {/* Error */}
@@ -2411,11 +2518,17 @@ function Tarot({ onBack }) {
   const [reading, setReading] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [gifFailed, setGifFailed] = useState(false);
+  const [hintIndex, setHintIndex] = useState(0);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const id = setInterval(() => setHintIndex((prev) => (prev + 1) % TAROT_LOADING_HINTS.length), 2600);
+    return () => clearInterval(id);
+  }, [loading]);
 
   const draw = async () => {
     setError('');
-    setGifFailed(false);
+    setHintIndex(0);
     setLoading(true);
     try {
       const data = await apiRequest('/v1/tarot/draw', {
@@ -2456,51 +2569,15 @@ function Tarot({ onBack }) {
       {error && <p className="error" role="alert" aria-live="polite">{error}</p>}
 
       {loading && (
-        <motion.div
-          className="fortune-loader"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-        >
-          {TAROT_LOADING_GIF && !gifFailed ? (
-            <motion.div
-              className="fortune-gif-stage"
-              initial={{ opacity: 0.5, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
-            >
-              <img
-                className="fortune-loader-gif"
-                src={TAROT_LOADING_GIF}
-                alt="Tarot loading"
-                loading="eager"
-                onError={() => setGifFailed(true)}
-              />
-            </motion.div>
-          ) : (
-            <div className="fortune-stage" aria-hidden="true">
-              <span className="fortune-particle particle-1" />
-              <span className="fortune-particle particle-2" />
-              <span className="fortune-particle particle-3" />
-              <span className="fortune-particle particle-4" />
-              <span className="fortune-particle particle-5" />
-
-              <div className="fortune-orbit orbit-1"><span className="orbit-card" /></div>
-              <div className="fortune-orbit orbit-2"><span className="orbit-card" /></div>
-              <div className="fortune-orbit orbit-3"><span className="orbit-card" /></div>
-
-              <motion.div
-                className="fortune-orb"
-                animate={{ y: [0, -6, 0], scale: [1, 1.02, 1] }}
-                transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
-              >
-                <div className="fortune-orb-core" />
-              </motion.div>
-            </div>
-          )}
-          <p className="fortune-loader-title">Сфера открывает знаки...</p>
-          <p className="fortune-loader-subtitle">Карты складываются в ответ</p>
-        </motion.div>
+        <UnifiedLoadingStage
+          gifSrc={TAROT_LOADING_GIF}
+          fallbackGifSrc={NATAL_LOADING_GIF}
+          gifAlt="Tarot loading"
+          placeholder="🃏"
+          title="Сфера открывает знаки..."
+          hints={TAROT_LOADING_HINTS}
+          hintIndex={hintIndex}
+        />
       )}
 
       {reading && (
@@ -2541,7 +2618,7 @@ function Tarot({ onBack }) {
 
 // ── Premium tarot: mode selector ─────────────────────────────────────
 
-function TarotModeSelect({ onBack, onBasic, onPremium }) {
+function TarotModeSelect({ onBack, onBasic, onPremium, starsPrices }) {
   const goldBorder = {
     background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
     border: '1px solid rgba(245,158,11,0.4)',
@@ -2613,7 +2690,7 @@ function TarotModeSelect({ onBack, onBasic, onPremium }) {
               fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em'
             }}
           >
-            Получить расклад ✦
+            {premiumButtonLabel('Получить расклад ✦', starsPrices, 'tarot_premium')}
           </motion.button>
         </motion.div>
 
@@ -2624,7 +2701,7 @@ function TarotModeSelect({ onBack, onBasic, onPremium }) {
 
 // ── Premium tarot: full report ────────────────────────────────────────
 
-function TarotPremium({ onBack }) {
+function TarotPremium({ onBack, starsPrices }) {
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2695,26 +2772,23 @@ function TarotPremium({ onBack }) {
           </label>
           {error && <p className="error" role="alert">{error}</p>}
           <button className="cta" onClick={draw} disabled={loading}>
-            Сделать расклад ✦
+            {premiumButtonLabel('Сделать расклад ✦', starsPrices, 'tarot_premium')}
           </button>
         </div>
       )}
 
       {/* Loading */}
       {loading && (
-        <motion.div className="natal-loader" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-          <div className="natal-loader-placeholder" style={{ fontSize: 32 }}>✦</div>
-          <p className="natal-loader-title" style={{ color: gold }}>Gemini читает карты...</p>
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={hintIndex} className="natal-loader-hint"
-              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
-            >
-              {PREMIUM_TAROT_LOADING_HINTS[hintIndex]}
-            </motion.p>
-          </AnimatePresence>
-        </motion.div>
+        <UnifiedLoadingStage
+          gifSrc={TAROT_LOADING_GIF}
+          fallbackGifSrc={NATAL_LOADING_GIF}
+          gifAlt="Premium tarot loading"
+          placeholder="✦"
+          title="Gemini читает карты..."
+          titleColor={gold}
+          hints={PREMIUM_TAROT_LOADING_HINTS}
+          hintIndex={hintIndex}
+        />
       )}
 
       {/* Report */}
@@ -2840,14 +2914,537 @@ function TarotPremium({ onBack }) {
   );
 }
 
+// ── Bottom tab bar ────────────────────────────────────────────────────
+
+function BottomTabBar({ activeView, onHome, onProfile }) {
+  const tabStyle = (active) => ({
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 3,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '10px 0',
+    color: active ? 'var(--accent-vibrant)' : 'var(--text-tertiary)',
+    fontSize: 11,
+    fontWeight: active ? 700 : 400,
+    letterSpacing: '0.04em',
+    transition: 'color 0.2s',
+  });
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 60,
+      display: 'flex',
+      background: 'rgba(10,10,18,0.92)',
+      backdropFilter: 'blur(16px)',
+      borderTop: '1px solid var(--glass-medium)',
+      zIndex: 100,
+    }}>
+      <button style={tabStyle(activeView === 'dashboard')} onClick={onHome}>
+        <span style={{ fontSize: 20 }}>✨</span>
+        Главная
+      </button>
+      <button style={tabStyle(activeView === 'profile')} onClick={onProfile}>
+        <span style={{ fontSize: 20 }}>☽</span>
+        Профиль
+      </button>
+    </div>
+  );
+}
+
+// ── Mini-toast: archetype revealed ───────────────────────────────────
+
+function MbtiToast({ mbtiType, onDismiss }) {
+  const archetype = MBTI_ARCHETYPES[mbtiType] || { name: mbtiType };
+  useEffect(() => {
+    const id = setTimeout(onDismiss, 3000);
+    return () => clearTimeout(id);
+  }, [onDismiss]);
+
+  return (
+    <motion.div
+      initial={{ y: 80, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 80, opacity: 0 }}
+      transition={{ type: 'spring', damping: 22, stiffness: 260 }}
+      onClick={onDismiss}
+      style={{
+        position: 'fixed',
+        bottom: 80,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(15,15,20,0.96))',
+        border: '1px solid rgba(245,158,11,0.5)',
+        borderRadius: 40,
+        padding: '10px 22px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        zIndex: 200,
+        boxShadow: '0 4px 32px rgba(245,158,11,0.2)',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ fontSize: 18 }}>✦</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: '#F59E0B' }}>
+        Архетип раскрыт:
+      </span>
+      <span style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+        {mbtiType} — {archetype.name}
+      </span>
+    </motion.div>
+  );
+}
+
+// ── Archetype quiz modal ──────────────────────────────────────────────
+
+function ArchetypeQuizModal({ onComplete, onClose }) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState([]);
+
+  const question = ARCHETYPE_QUIZ_QUESTIONS[step];
+  const progress = ((step) / ARCHETYPE_QUIZ_QUESTIONS.length) * 100;
+
+  const handleAnswer = (letter) => {
+    const next = [...answers, letter];
+    if (next.length === ARCHETYPE_QUIZ_QUESTIONS.length) {
+      const type = next.join('');
+      onComplete(type);
+    } else {
+      setAnswers(next);
+      setStep(step + 1);
+    }
+  };
+
+  const btnBase = {
+    width: '100%',
+    padding: '16px 20px',
+    border: '1px solid var(--glass-medium)',
+    borderRadius: 'var(--radius-xl)',
+    background: 'var(--glass-light)',
+    color: 'var(--text-primary)',
+    fontSize: 15,
+    fontWeight: 500,
+    cursor: 'pointer',
+    textAlign: 'left',
+    transition: 'background 0.15s, border-color 0.15s',
+    lineHeight: 1.4,
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 150,
+        background: 'rgba(5,5,12,0.85)',
+        backdropFilter: 'blur(12px)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 480,
+          background: 'var(--bg-surface, #0f0f18)',
+          borderRadius: '24px 24px 0 0',
+          padding: '24px 20px 40px',
+          border: '1px solid var(--glass-medium)',
+          borderBottom: 'none',
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              ✦ Архетип разума
+            </span>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+              {step + 1} из {ARCHETYPE_QUIZ_QUESTIONS.length}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 20, cursor: 'pointer', padding: 4 }}>
+            ✕
+          </button>
+        </div>
+
+        {/* Progress bar */}
+        <div style={{ height: 3, background: 'var(--glass-medium)', borderRadius: 2, marginBottom: 24 }}>
+          <motion.div
+            style={{ height: '100%', background: '#F59E0B', borderRadius: 2 }}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.3 }}
+          />
+        </div>
+
+        {/* Question */}
+        <p style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.5, marginBottom: 24, color: 'var(--text-primary)' }}>
+          {question.question}
+        </p>
+
+        {/* Options */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <motion.button
+            style={btnBase}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => handleAnswer(question.a.letter)}
+          >
+            {question.a.label}
+          </motion.button>
+          <motion.button
+            style={btnBase}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => handleAnswer(question.b.letter)}
+          >
+            {question.b.label}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Profile screen ────────────────────────────────────────────────────
+
+const REPORT_TYPE_LABELS = {
+  natal_basic: 'Натальная карта',
+  natal_premium: 'Натальная карта',
+  tarot_basic: 'Таро-расклад',
+  tarot_premium: 'Таро-расклад',
+  numerology_basic: 'Нумерология',
+  numerology_premium: 'Нумерология',
+};
+
+const ZODIAC_SIGNS = {
+  'Овен': '♈', 'Телец': '♉', 'Близнецы': '♊', 'Рак': '♋',
+  'Лев': '♌', 'Дева': '♍', 'Весы': '♎', 'Скорпион': '♏',
+  'Стрелец': '♐', 'Козерог': '♑', 'Водолей': '♒', 'Рыбы': '♓',
+  'Aries': '♈', 'Taurus': '♉', 'Gemini': '♊', 'Cancer': '♋',
+  'Leo': '♌', 'Virgo': '♍', 'Libra': '♎', 'Scorpio': '♏',
+  'Sagittarius': '♐', 'Capricorn': '♑', 'Aquarius': '♒', 'Pisces': '♓',
+};
+
+function zodiacEmoji(sign) {
+  if (!sign) return '';
+  const key = Object.keys(ZODIAC_SIGNS).find(k => sign.toLowerCase().includes(k.toLowerCase()));
+  return key ? ZODIAC_SIGNS[key] : '';
+}
+
+function formatRelDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const now = new Date();
+  const diffDays = Math.floor((now - d) / 86400000);
+  if (diffDays === 0) return 'Сегодня';
+  if (diffDays === 1) return 'Вчера';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+}
+
+function PremiumBadge() {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+      color: '#F59E0B', background: 'rgba(245,158,11,0.15)',
+      border: '1px solid rgba(245,158,11,0.4)', borderRadius: 20, padding: '2px 8px',
+      whiteSpace: 'nowrap',
+    }}>✦ Премиум</span>
+  );
+}
+
+function ReportCard({ report }) {
+  const isPremium = report.is_premium;
+  const s = report.summary || {};
+
+  const cardStyle = isPremium ? {
+    background: 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)',
+    border: '1px solid rgba(245,158,11,0.4)',
+    boxShadow: '0 0 20px rgba(245,158,11,0.08)',
+    borderRadius: 'var(--radius-xl)',
+    padding: 'var(--spacing-3)',
+    marginBottom: 10,
+  } : {
+    background: 'var(--glass-light)',
+    border: '1px solid var(--glass-medium)',
+    borderRadius: 'var(--radius-xl)',
+    padding: 'var(--spacing-3)',
+    marginBottom: 10,
+  };
+
+  const type = report.type || '';
+  const date = formatRelDate(report.created_at);
+
+  const renderNatal = () => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>
+          {zodiacEmoji(s.sun_sign)} {s.sun_sign || '—'}
+        </span>
+        {isPremium ? <PremiumBadge /> : <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{date}</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: isPremium && s.report_preview ? 8 : 0 }}>
+        {s.moon_sign && (
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--glass-medium)', borderRadius: 12, padding: '2px 8px' }}>
+            ☽ {s.moon_sign}
+          </span>
+        )}
+        {s.rising_sign && (
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--glass-medium)', borderRadius: 12, padding: '2px 8px' }}>
+            ↑ {s.rising_sign}
+          </span>
+        )}
+      </div>
+      {isPremium && s.report_preview && (
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '6px 0 0', lineHeight: 1.5, fontStyle: 'italic' }}>
+          «{s.report_preview}…»
+        </p>
+      )}
+      {isPremium && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>{date}</div>}
+    </div>
+  );
+
+  const renderTarot = () => {
+    const cards = s.cards || [];
+    const spreadLabel = s.spread_type === 'one_card' ? '1 карта' : s.spread_type === 'three_card' ? '3 карты' : s.spread_type || '';
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>🃏 {spreadLabel}</span>
+          {isPremium ? <PremiumBadge /> : <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{date}</span>}
+        </div>
+        {s.question && (
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 6px', fontStyle: 'italic' }}>
+            «{s.question.length > 60 ? s.question.slice(0, 60) + '…' : s.question}»
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {cards.slice(0, 3).map((c, i) => (
+            <span key={i} style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--glass-medium)', borderRadius: 10, padding: '2px 7px' }}>
+              {c.is_reversed ? '↓ ' : ''}{c.card_name?.length > 18 ? c.card_name.slice(0, 18) + '…' : c.card_name}
+            </span>
+          ))}
+        </div>
+        {isPremium && s.report_preview && (
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '6px 0 0', lineHeight: 1.5, fontStyle: 'italic' }}>
+            «{s.report_preview}…»
+          </p>
+        )}
+        {isPremium && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>{date}</div>}
+      </div>
+    );
+  };
+
+  const renderNumerology = () => {
+    const nums = s.numbers || {};
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>🔢 Числовой код</span>
+          {isPremium ? <PremiumBadge /> : <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{date}</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {nums.life_path != null && (
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--glass-medium)', borderRadius: 12, padding: '2px 8px' }}>
+              Путь: {nums.life_path}
+            </span>
+          )}
+          {nums.expression != null && (
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--glass-medium)', borderRadius: 12, padding: '2px 8px' }}>
+              Судьба: {nums.expression}
+            </span>
+          )}
+          {nums.soul_urge != null && (
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--glass-medium)', borderRadius: 12, padding: '2px 8px' }}>
+              Душа: {nums.soul_urge}
+            </span>
+          )}
+        </div>
+        {isPremium && s.report_preview && (
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '6px 0 0', lineHeight: 1.5, fontStyle: 'italic' }}>
+            «{s.report_preview}…»
+          </p>
+        )}
+        {isPremium && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>{date}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div style={cardStyle}>
+      {type.startsWith('natal') && renderNatal()}
+      {type.startsWith('tarot') && renderTarot()}
+      {type.startsWith('numerology') && renderNumerology()}
+    </div>
+  );
+}
+
+function ProfileScreen({ onOpenQuiz, mbtiType, onChangeMbti }) {
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchUserHistory()
+      .then(data => setReports(data.reports || []))
+      .catch(() => setReports([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const grouped = {
+    natal: reports.filter(r => r.type?.startsWith('natal')),
+    tarot: reports.filter(r => r.type?.startsWith('tarot')),
+    numerology: reports.filter(r => r.type?.startsWith('numerology')),
+  };
+
+  const archetype = MBTI_ARCHETYPES[mbtiType];
+
+  const sectionTitle = (label) => (
+    <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 10, marginTop: 8 }}>
+      {label}
+    </div>
+  );
+
+  const emptyCard = (msg) => (
+    <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '12px 0 4px' }}>{msg}</div>
+  );
+
+  return (
+    <Shell title="Профиль" subtitle="Твои расчёты и коды судьбы" showTabBar>
+      <motion.div className="stack" variants={staggerContainer} initial="initial" animate="animate">
+
+        {/* Коды судьбы */}
+        <motion.div variants={staggerItem}>
+          {sectionTitle('✦ Коды судьбы')}
+          <div style={{
+            borderRadius: 'var(--radius-xl)',
+            padding: 'var(--spacing-3)',
+            border: mbtiType ? '1px solid rgba(245,158,11,0.4)' : '1px solid var(--glass-medium)',
+            background: mbtiType
+              ? 'linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(15,15,20,0.95) 100%)'
+              : 'var(--glass-light)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: mbtiType ? 8 : 0 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>Архетип разума</div>
+                {mbtiType && archetype && (
+                  <div style={{ fontSize: 13, color: '#F59E0B', fontWeight: 600 }}>
+                    {mbtiType} — {archetype.name}
+                  </div>
+                )}
+                {!mbtiType && (
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    Открой свой архетип за 30 сек
+                  </div>
+                )}
+              </div>
+              {mbtiType && (
+                <button
+                  onClick={onChangeMbti}
+                  style={{ background: 'none', border: '1px solid var(--glass-medium)', borderRadius: 16, padding: '4px 12px', color: 'var(--text-tertiary)', fontSize: 12, cursor: 'pointer' }}
+                >
+                  Изменить
+                </button>
+              )}
+            </div>
+            {mbtiType && archetype && (
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {archetype.desc}
+              </div>
+            )}
+            {!mbtiType && (
+              <motion.button
+                className="ghost"
+                onClick={onOpenQuiz}
+                whileTap={{ scale: 0.97 }}
+                style={{ width: '100%', marginTop: 12, borderColor: 'rgba(245,158,11,0.4)', color: '#F59E0B' }}
+              >
+                Открыть архетип разума →
+              </motion.button>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Натальная карта */}
+        <motion.div variants={staggerItem}>
+          {sectionTitle('Натальная карта')}
+          {loading && <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Загрузка...</div>}
+          {!loading && grouped.natal.length === 0 && emptyCard('Расчёты появятся здесь')}
+          {grouped.natal.map((r, i) => <ReportCard key={`${r.type}-${r.id}-${i}`} report={r} />)}
+        </motion.div>
+
+        {/* Таро */}
+        <motion.div variants={staggerItem}>
+          {sectionTitle('Таро')}
+          {loading && <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Загрузка...</div>}
+          {!loading && grouped.tarot.length === 0 && emptyCard('Расклады появятся здесь')}
+          {grouped.tarot.map((r, i) => <ReportCard key={`${r.type}-${r.id}-${i}`} report={r} />)}
+        </motion.div>
+
+        {/* Нумерология */}
+        <motion.div variants={staggerItem}>
+          {sectionTitle('Нумерология')}
+          {loading && <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Загрузка...</div>}
+          {!loading && grouped.numerology.length === 0 && emptyCard('Расчёты появятся здесь')}
+          {grouped.numerology.map((r, i) => <ReportCard key={`${r.type}-${r.id}-${i}`} report={r} />)}
+        </motion.div>
+
+      </motion.div>
+    </Shell>
+  );
+}
+
 export default function App() {
   const startParam = useStartParam();
+  const [uiLang, setUiLang] = useState(() => resolveUserLanguageCode());
   const [view, setView] = useState('dashboard');
   const lastTrackedViewRef = useRef('');
   const [deletingProfile, setDeletingProfile] = useState(false);
+  const [mbtiType, setMbtiType] = useState(null);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [toastMbti, setToastMbti] = useState(null);
+  const [starsPrices, setStarsPrices] = useState({});
 
   const onboardingDone = useMemo(() => localStorage.getItem('onboarding_complete') === '1', []);
   const [hasOnboarding, setHasOnboarding] = useState(onboardingDone);
+
+  useEffect(() => {
+    document.documentElement.lang = uiLang;
+  }, [uiLang]);
+
+  useUiAutoTranslate(uiLang);
+
+  useEffect(() => {
+    let active = true;
+    fetchStarsCatalog()
+      .then((data) => {
+        if (!active) return;
+        const next = {};
+        for (const item of (data?.items || [])) {
+          const amount = Number(item?.amount_stars);
+          const feature = String(item?.feature || '');
+          if (feature && Number.isFinite(amount) && amount > 0) {
+            next[feature] = amount;
+          }
+        }
+        setStarsPrices(next);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const resetToOnboarding = useCallback(() => {
     localStorage.removeItem('onboarding_complete');
@@ -2896,9 +3493,35 @@ export default function App() {
     };
   }, [hasOnboarding, resetToOnboarding]);
 
+  // Load mbti_type from user profile on mount
+  useEffect(() => {
+    if (!hasOnboarding) return;
+    apiRequest('/v1/users/me')
+      .then((data) => {
+        if (data?.language_code) {
+          const normalized = persistUserLanguageCode(data.language_code);
+          setUiLang(normalized);
+          document.documentElement.lang = normalized;
+        }
+        if (data?.mbti_type) setMbtiType(data.mbti_type);
+      })
+      .catch(() => {});
+  }, [hasOnboarding]);
+
+  const handleQuizComplete = useCallback(async (type) => {
+    setQuizOpen(false);
+    try {
+      await saveUserMbtiType(type);
+      setMbtiType(type);
+      setToastMbti(type);
+    } catch (_) { /* ignore */ }
+  }, []);
+
   const deleteProfile = useCallback(async () => {
     if (deletingProfile) return;
-    const confirmed = window.confirm('Удалить профиль и всю историю? Это действие нельзя отменить.');
+    const confirmed = window.confirm(
+      translateFixedUiText('Удалить профиль и всю историю? Это действие нельзя отменить.', uiLang)
+    );
     if (!confirmed) return;
 
     setDeletingProfile(true);
@@ -2906,11 +3529,13 @@ export default function App() {
       await apiRequest('/v1/natal/profile', { method: 'DELETE' });
       resetToOnboarding();
     } catch (e) {
-      window.alert(String(e?.message || e || 'Не удалось удалить профиль.'));
+      window.alert(
+        String(e?.message || e || translateFixedUiText('Не удалось удалить профиль.', uiLang))
+      );
     } finally {
       setDeletingProfile(false);
     }
-  }, [deletingProfile, resetToOnboarding]);
+  }, [deletingProfile, resetToOnboarding, uiLang]);
 
   if (view === 'onboarding' || !hasOnboarding) {
     return <Onboarding mode="create" onComplete={() => { setHasOnboarding(true); setView('dashboard'); }} />;
@@ -2934,6 +3559,7 @@ export default function App() {
       onBack={() => setView('dashboard')}
       onBasic={() => setView('natal')}
       onPremium={() => setView('natal_premium')}
+      starsPrices={starsPrices}
     />
   );
   if (view === 'natal') return <NatalChart onBack={() => setView('natal_mode_select')} onMissingProfile={resetToOnboarding} />;
@@ -2944,29 +3570,74 @@ export default function App() {
       onBack={() => setView('dashboard')}
       onBasic={() => setView('tarot')}
       onPremium={() => setView('tarot_premium')}
+      starsPrices={starsPrices}
     />
   );
   if (view === 'tarot') return <Tarot onBack={() => setView('tarot_mode_select')} />;
-  if (view === 'tarot_premium') return <TarotPremium onBack={() => setView('tarot_mode_select')} />;
+  if (view === 'tarot_premium') return <TarotPremium onBack={() => setView('tarot_mode_select')} starsPrices={starsPrices} />;
   if (view === 'numerology_mode_select') return (
     <NumerologyModeSelect
       onBack={() => setView('dashboard')}
       onBasic={() => setView('numerology')}
       onPremium={() => setView('numerology_premium')}
+      starsPrices={starsPrices}
     />
   );
   if (view === 'numerology') return <Numerology onBack={() => setView('numerology_mode_select')} onMissingProfile={resetToOnboarding} />;
-  if (view === 'numerology_premium') return <NumerologyPremiumReport onBack={() => setView('numerology_mode_select')} onMissingProfile={resetToOnboarding} />;
+  if (view === 'numerology_premium') return <NumerologyPremiumReport onBack={() => setView('numerology_mode_select')} onMissingProfile={resetToOnboarding} starsPrices={starsPrices} />;
+
+  const isMainView = view === 'dashboard' || view === 'profile';
+
+  if (view === 'profile') {
+    return (
+      <>
+        <AnimatePresence>
+          {quizOpen && (
+            <ArchetypeQuizModal
+              onComplete={handleQuizComplete}
+              onClose={() => setQuizOpen(false)}
+            />
+          )}
+          {toastMbti && (
+            <MbtiToast mbtiType={toastMbti} onDismiss={() => setToastMbti(null)} />
+          )}
+        </AnimatePresence>
+        <ProfileScreen
+          mbtiType={mbtiType}
+          onOpenQuiz={() => setQuizOpen(true)}
+          onChangeMbti={() => setQuizOpen(true)}
+        />
+        <BottomTabBar activeView="profile" onHome={() => setView('dashboard')} onProfile={() => setView('profile')} />
+      </>
+    );
+  }
 
   return (
-    <Dashboard
-      onOpenNatal={() => setView('natal_mode_select')}
-      onOpenStories={() => setView('stories')}
-      onOpenTarot={() => setView('tarot_mode_select')}
-      onOpenNumerology={() => setView('numerology_mode_select')}
-      onEditBirthData={() => setView('profile_edit')}
-      onDeleteProfile={deleteProfile}
-      deletingProfile={deletingProfile}
-    />
+    <>
+      <AnimatePresence>
+        {quizOpen && (
+          <ArchetypeQuizModal
+            onComplete={handleQuizComplete}
+            onClose={() => setQuizOpen(false)}
+          />
+        )}
+        {toastMbti && (
+          <MbtiToast mbtiType={toastMbti} onDismiss={() => setToastMbti(null)} />
+        )}
+      </AnimatePresence>
+      <Dashboard
+        onOpenNatal={() => setView('natal_mode_select')}
+        onOpenStories={() => setView('stories')}
+        onOpenTarot={() => setView('tarot_mode_select')}
+        onOpenNumerology={() => setView('numerology_mode_select')}
+        onEditBirthData={() => setView('profile_edit')}
+        onDeleteProfile={deleteProfile}
+        deletingProfile={deletingProfile}
+        showTabBar
+      />
+      {isMainView && (
+        <BottomTabBar activeView="dashboard" onHome={() => setView('dashboard')} onProfile={() => setView('profile')} />
+      )}
+    </>
   );
 }

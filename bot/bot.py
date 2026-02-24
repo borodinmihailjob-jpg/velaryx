@@ -5,8 +5,17 @@ from urllib.parse import urlparse
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo
+from aiogram.types import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    MenuButtonWebApp,
+    Message,
+    PreCheckoutQuery,
+    WebAppInfo,
+)
 from dotenv import load_dotenv
+import httpx
 
 load_dotenv()
 
@@ -20,6 +29,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "")
 MINI_APP_NAME = os.getenv("MINI_APP_NAME", "app")
 MINI_APP_PUBLIC_BASE_URL = os.getenv("MINI_APP_PUBLIC_BASE_URL", "").strip()
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "").strip()
+INTERNAL_API_BASE_URL = os.getenv("INTERNAL_API_BASE_URL", "http://api:8000").strip().rstrip("/")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is required")
@@ -27,6 +38,48 @@ if not BOT_TOKEN:
 logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+
+BOT_COPY = {
+    "ru": {
+        "portal_btn": "Войти в портал 🪞",
+        "start_text": (
+            "Символы уже приходят в движение…🕯\n"
+            "Твой вопрос будет услышан, и нити судьбы сплетутся в историю 🔮✨\n\n"
+            "✨ Коснись портала ниже —\n"
+            "и позволь раскладу открыться 🃏"
+        ),
+        "app_text": "Откройте Mini App по кнопке ниже.",
+        "fallback_text": "Для работы используйте Mini App.",
+        "link_error": "Нужно задать BOT_USERNAME или корректный MINI_APP_PUBLIC_BASE_URL (https://...).",
+    },
+    "en": {
+        "portal_btn": "Open portal 🪞",
+        "start_text": (
+            "The symbols are already moving…🕯\n"
+            "Your question will be heard, and the threads of fate will weave into a story 🔮✨\n\n"
+            "✨ Tap the portal below —\n"
+            "and let the spread reveal itself 🃏"
+        ),
+        "app_text": "Open the Mini App using the button below.",
+        "fallback_text": "Use the Mini App to continue.",
+        "link_error": "Set BOT_USERNAME or a valid MINI_APP_PUBLIC_BASE_URL (https://...).",
+    },
+}
+
+
+def normalize_lang_code(raw: str | None) -> str:
+    if not raw:
+        return "ru"
+    source = str(raw).strip().lower().replace("_", "-")
+    if not source:
+        return "ru"
+    base = source.split("-", 1)[0]
+    return "ru" if base == "ru" else "en"
+
+
+def copy_for_lang(raw: str | None) -> dict[str, str]:
+    return BOT_COPY[normalize_lang_code(raw)]
 
 
 def miniapp_base_link() -> str:
@@ -50,11 +103,12 @@ def has_miniapp_link() -> bool:
     return bool(miniapp_webapp_url() or miniapp_base_link())
 
 
-def miniapp_keyboard() -> InlineKeyboardMarkup:
+def miniapp_keyboard(language_code: str | None = None) -> InlineKeyboardMarkup:
+    copy = copy_for_lang(language_code)
     webapp_url = miniapp_webapp_url()
     if webapp_url:
         button = InlineKeyboardButton(
-            text="Войти в портал 🪞",
+            text=copy["portal_btn"],
             web_app=WebAppInfo(url=webapp_url),
         )
     else:
@@ -62,7 +116,7 @@ def miniapp_keyboard() -> InlineKeyboardMarkup:
         if not deep_link:
             raise RuntimeError("BOT_USERNAME or valid MINI_APP_PUBLIC_BASE_URL is required")
         button = InlineKeyboardButton(
-            text="Войти в портал 🪞",
+            text=copy["portal_btn"],
             url=deep_link,
         )
     return InlineKeyboardMarkup(
@@ -74,48 +128,140 @@ def miniapp_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+async def sync_user_profile_from_start(message: Message) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    if not INTERNAL_API_KEY or not INTERNAL_API_BASE_URL:
+        return
+
+    payload = {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "username": user.username,
+        "language_code": user.language_code,
+        "is_premium": user.is_premium,
+        "allows_write_to_pm": getattr(user, "allows_write_to_pm", None),
+    }
+    headers = {
+        "X-Internal-API-Key": INTERNAL_API_KEY,
+        "X-TG-User-ID": str(user.id),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(f"{INTERNAL_API_BASE_URL}/v1/users/me", headers=headers, json=payload)
+            response.raise_for_status()
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to sync user language on /start | tg_user_id=%s | err=%s", user.id, exc)
+
+
+async def notify_backend_about_successful_payment(message: Message) -> None:
+    payment = message.successful_payment
+    if payment is None:
+        return
+    if not INTERNAL_API_KEY or not INTERNAL_API_BASE_URL:
+        logger.warning("Skipping payment sync: INTERNAL_API_KEY or INTERNAL_API_BASE_URL not configured")
+        return
+
+    payload = {
+        "invoice_payload": payment.invoice_payload,
+        "tg_user_id": message.from_user.id if message.from_user else None,
+        "currency": payment.currency,
+        "total_amount": payment.total_amount,
+        "telegram_payment_charge_id": payment.telegram_payment_charge_id,
+        "provider_payment_charge_id": payment.provider_payment_charge_id,
+    }
+    headers = {
+        "X-Internal-API-Key": INTERNAL_API_KEY,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{INTERNAL_API_BASE_URL}/v1/payments/internal/telegram-success",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+    except Exception as exc:  # pragma: no cover
+        logger.warning(
+            "Failed to sync successful payment | tg_user_id=%s | invoice_payload=%s | err=%s",
+            message.from_user.id if message.from_user else "-",
+            payment.invoice_payload,
+            exc,
+        )
+
+
 @dp.message(Command("start"))
 async def start_handler(message: Message) -> None:
+    user_lang = message.from_user.language_code if message.from_user else None
+    copy = copy_for_lang(user_lang)
     logger.info(
-        "Запуск бота пользователем | tg_user_id=%s | username=%s",
+        "Запуск бота пользователем | tg_user_id=%s | username=%s | language_code=%s",
         message.from_user.id if message.from_user else "-",
         message.from_user.username if message.from_user else "-",
+        user_lang or "-",
     )
+    await sync_user_profile_from_start(message)
     if not has_miniapp_link():
-        await message.answer("Нужно задать BOT_USERNAME или корректный MINI_APP_PUBLIC_BASE_URL (https://...).")
+        await message.answer(copy["link_error"])
         return
     await message.answer(
-        "Символы уже приходят в движение…🕯\n"
-        "Твой вопрос будет услышан, и нити судьбы сплетутся в историю 🔮✨\n\n"
-        "✨ Коснись портала ниже —\n"
-        "и позволь раскладу открыться 🃏",
-        reply_markup=miniapp_keyboard(),
+        copy["start_text"],
+        reply_markup=miniapp_keyboard(user_lang),
     )
 
 
 @dp.message(Command("app"))
 async def app_handler(message: Message) -> None:
+    user_lang = message.from_user.language_code if message.from_user else None
+    copy = copy_for_lang(user_lang)
     logger.info(
         "Команда /app | tg_user_id=%s",
         message.from_user.id if message.from_user else "-",
     )
     if not has_miniapp_link():
-        await message.answer("Нужно задать BOT_USERNAME или корректный MINI_APP_PUBLIC_BASE_URL (https://...).")
+        await message.answer(copy["link_error"])
         return
     await message.answer(
-        "Откройте Mini App по кнопке ниже.",
-        reply_markup=miniapp_keyboard(),
+        copy["app_text"],
+        reply_markup=miniapp_keyboard(user_lang),
     )
+
+
+@dp.pre_checkout_query()
+async def pre_checkout_handler(query: PreCheckoutQuery) -> None:
+    await bot.answer_pre_checkout_query(query.id, ok=True)
+
+
+@dp.message(F.successful_payment)
+async def successful_payment_handler(message: Message) -> None:
+    payment = message.successful_payment
+    if payment is None:
+        return
+    logger.info(
+        "Successful payment | tg_user_id=%s | currency=%s | total=%s | payload=%s",
+        message.from_user.id if message.from_user else "-",
+        payment.currency,
+        payment.total_amount,
+        payment.invoice_payload,
+    )
+    await notify_backend_about_successful_payment(message)
+    if has_miniapp_link():
+        await message.answer("Оплата получена. Возвращайтесь в Mini App — отчёт готов к запуску.")
 
 
 @dp.message(F.text)
 async def fallback_handler(message: Message) -> None:
+    user_lang = message.from_user.language_code if message.from_user else None
+    copy = copy_for_lang(user_lang)
     if not has_miniapp_link():
-        await message.answer("Нужно задать BOT_USERNAME или корректный MINI_APP_PUBLIC_BASE_URL (https://...).")
+        await message.answer(copy["link_error"])
         return
     await message.answer(
-        "Для работы используйте Mini App.",
-        reply_markup=miniapp_keyboard(),
+        copy["fallback_text"],
+        reply_markup=miniapp_keyboard(user_lang),
     )
 
 
@@ -126,7 +272,7 @@ async def main() -> None:
         if webapp_url:
             await bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
-                    text="Войти в портал 🪞",
+                    text=BOT_COPY["ru"]["portal_btn"],
                     web_app=WebAppInfo(url=webapp_url),
                 )
             )
