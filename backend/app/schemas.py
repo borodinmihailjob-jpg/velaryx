@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
 
@@ -197,16 +198,80 @@ class TaskStatusResponse(BaseModel):
     error: str | None = None
 
 
-PremiumFeatureCode = Literal["natal_premium", "tarot_premium", "numerology_premium"]
+PremiumFeatureCode = Literal["natal_premium", "tarot_premium", "numerology_premium", "compat_premium"]
 WalletTopupFeatureCode = Literal["wallet_topup_29", "wallet_topup_49", "wallet_topup_99"]
 StarsFeatureCode = Literal[
     "natal_premium",
     "tarot_premium",
     "numerology_premium",
+    "compat_premium",
     "wallet_topup_29",
     "wallet_topup_49",
     "wallet_topup_99",
 ]
+
+
+class CompatType(str, Enum):
+    romantic = "romantic"
+    friendship = "friendship"
+    work = "work"
+
+
+class CompatFreeRequest(BaseModel):
+    compat_type: CompatType
+    birth_date_1: date
+    birth_date_2: date
+    name_1: str | None = Field(default=None, max_length=32)
+    name_2: str | None = Field(default=None, max_length=32)
+
+    @field_validator("birth_date_1", "birth_date_2")
+    @classmethod
+    def birth_date_in_range(cls, v: date) -> date:
+        if v.year < 1800 or v.year > 2100:
+            raise ValueError("birth_date must be between 1800 and 2100")
+        if v > date.today():
+            raise ValueError("birth_date cannot be in the future")
+        return v
+
+    @field_validator("name_1", "name_2")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+
+class CompatFreeResult(BaseModel):
+    compatibility_score: int
+    summary: str
+    strength: str
+    risk: str
+    advice: str
+
+
+class CompatFreeResponse(BaseModel):
+    type: str = "compat_free"
+    compat_type: str
+    person_1: dict
+    person_2: dict
+    result: CompatFreeResult
+    status: str = "done"
+
+
+class CompatPremiumResponse(BaseModel):
+    type: str = "compat_premium"
+    compat_type: str
+    person_1: dict
+    person_2: dict
+    compatibility_score: int
+    summary: str
+    green_flags: list[str]
+    red_flags: list[str]
+    communication_tips: list[str]
+    time_windows: list[str]
+    follow_up_questions: list[str]
+    status: str = "done"
 
 
 class StarsCatalogItem(BaseModel):

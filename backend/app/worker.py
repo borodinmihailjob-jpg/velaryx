@@ -18,6 +18,8 @@ from .llm_engine import (
     interpret_numerology_async,
     interpret_numerology_premium_async,
     interpret_tarot_premium_async,
+    interpret_compat_free_async,
+    interpret_compat_premium_async,
 )
 
 logger = logging.getLogger("astrobot.worker")
@@ -578,6 +580,146 @@ async def task_generate_tarot_premium(
     return result
 
 
+_COMPAT_FREE_FALLBACK_RESULT = {
+    "compatibility_score": 60,
+    "summary": "Оба знака дополняют друг друга в ключевых жизненных сферах. Энергетический потенциал союза выше среднего.",
+    "strength": "Взаимное уважение и готовность к диалогу создают прочный фундамент.",
+    "risk": "Возможны разногласия в темпах и приоритетах. Важна открытая коммуникация.",
+    "advice": "Сфокусируйтесь на общих целях и регулярно сверяйте ожидания.",
+}
+
+
+async def task_generate_compat_free(
+    ctx: dict[str, Any],
+    *,
+    user_id: int,
+    tg_user_id: int,
+    compat_type: str,
+    sign_1: str,
+    sign_2: str,
+    name_1: str | None,
+    name_2: str | None,
+) -> dict[str, Any]:
+    """Free compatibility report. Returns CompatFreeResult dict."""
+    job_id: str = ctx["job_id"]
+    redis = ctx["redis"]
+
+    logger.info("Worker: task_generate_compat_free start | user_id=%s | job_id=%s", user_id, job_id)
+
+    llm_result = await interpret_compat_free_async(
+        compat_type=compat_type,
+        sign_1=sign_1,
+        sign_2=sign_2,
+        name_1=name_1,
+        name_2=name_2,
+    )
+
+    if llm_result:
+        logger.info("Worker: compat free LLM success | user_id=%s | job_id=%s", user_id, job_id)
+        compat_result = llm_result
+    else:
+        logger.warning("Worker: compat free LLM failed, using fallback | user_id=%s | job_id=%s", user_id, job_id)
+        compat_result = _COMPAT_FREE_FALLBACK_RESULT
+
+    result = {
+        "type": "compat_free",
+        "compat_type": compat_type,
+        "person_1": {"sign": sign_1, "name": name_1},
+        "person_2": {"sign": sign_2, "name": name_2},
+        "result": compat_result,
+        "status": "done",
+    }
+
+    task_key = f"arq_task:{job_id}"
+    task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
+    await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+
+    await save_report_to_history(
+        redis=redis,
+        tg_user_id=tg_user_id,
+        report_type="compat_free",
+        report_id=f"{tg_user_id}_{sign_1}_{sign_2}",
+        is_premium=False,
+        summary={"compat_type": compat_type, "sign_1": sign_1, "sign_2": sign_2, "score": compat_result.get("compatibility_score")},
+    )
+
+    logger.info("Worker: task_generate_compat_free done | user_id=%s | job_id=%s", user_id, job_id)
+    return result
+
+
+async def task_generate_compat_premium(
+    ctx: dict[str, Any],
+    *,
+    user_id: int,
+    tg_user_id: int,
+    compat_type: str,
+    sign_1: str,
+    sign_2: str,
+    name_1: str | None,
+    name_2: str | None,
+) -> dict[str, Any]:
+    """Premium compatibility report via OpenRouter Gemini. Returns CompatPremiumResponse dict."""
+    job_id: str = ctx["job_id"]
+    redis = ctx["redis"]
+
+    logger.info("Worker: task_generate_compat_premium start | user_id=%s | job_id=%s", user_id, job_id)
+
+    try:
+        report = await interpret_compat_premium_async(
+            compat_type=compat_type,
+            sign_1=sign_1,
+            sign_2=sign_2,
+            name_1=name_1,
+            name_2=name_2,
+        )
+    except Exception as exc:
+        logger.error("Worker: task_generate_compat_premium exception | user_id=%s | job_id=%s | err=%s", user_id, job_id, exc)
+        task_key = f"arq_task:{job_id}"
+        task_payload = json.dumps({"status": "failed", "error": "Внутренняя ошибка при генерации отчёта"}, ensure_ascii=False)
+        await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        _restore_premium_claim(job_id, user_id)
+        raise
+
+    if not report:
+        logger.error("Worker: compat premium LLM failed | user_id=%s | job_id=%s", user_id, job_id)
+        task_key = f"arq_task:{job_id}"
+        task_payload = json.dumps({"status": "failed", "error": PREMIUM_LLM_FAILURE_MESSAGE}, ensure_ascii=False)
+        await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+        _restore_premium_claim(job_id, user_id)
+        return {"type": "compat_premium", "report": None}
+
+    result = {
+        "type": "compat_premium",
+        "compat_type": compat_type,
+        "person_1": {"sign": sign_1, "name": name_1},
+        "person_2": {"sign": sign_2, "name": name_2},
+        **report,
+        "status": "done",
+    }
+
+    task_key = f"arq_task:{job_id}"
+    task_payload = json.dumps({"status": "done", "result": result}, ensure_ascii=False)
+    await redis.setex(task_key, ARQ_TASK_TTL, task_payload)
+
+    await save_report_to_history(
+        redis=redis,
+        tg_user_id=tg_user_id,
+        report_type="compat_premium",
+        report_id=f"{tg_user_id}_{sign_1}_{sign_2}_premium",
+        is_premium=True,
+        summary={
+            "compat_type": compat_type,
+            "sign_1": sign_1,
+            "sign_2": sign_2,
+            "score": report.get("compatibility_score"),
+            "report_preview": str(report.get("summary") or "")[:120],
+        },
+    )
+
+    logger.info("Worker: task_generate_compat_premium done | user_id=%s | job_id=%s", user_id, job_id)
+    return result
+
+
 async def on_worker_startup(ctx: dict[str, Any]) -> None:
     logger.info("ARQ worker started")
 
@@ -587,7 +729,7 @@ async def on_worker_shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [task_generate_natal, task_generate_natal_premium, task_generate_stories, task_generate_numerology, task_generate_numerology_premium, task_generate_tarot_premium]
+    functions = [task_generate_natal, task_generate_natal_premium, task_generate_stories, task_generate_numerology, task_generate_numerology_premium, task_generate_tarot_premium, task_generate_compat_free, task_generate_compat_premium]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_startup = on_worker_startup
     on_shutdown = on_worker_shutdown

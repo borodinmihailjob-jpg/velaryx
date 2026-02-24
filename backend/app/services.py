@@ -1228,6 +1228,31 @@ def build_tarot_cards_payload(cards: list[models.TarotCard]) -> list[dict]:
     ]
 
 
+def get_sun_sign(birth_date: date) -> str:
+    """Calculate western sun sign from birth date."""
+    month, day = birth_date.month, birth_date.day
+    # Boundaries as (month_start, day_start, sign_name)
+    # We iterate from latest to earliest; first match wins.
+    ranges = [
+        (12, 22, "Козерог"),
+        (11, 22, "Стрелец"),
+        (10, 23, "Скорпион"),
+        (9, 23, "Весы"),
+        (8, 23, "Дева"),
+        (7, 23, "Лев"),
+        (6, 21, "Рак"),
+        (5, 21, "Близнецы"),
+        (4, 20, "Телец"),
+        (3, 21, "Овен"),
+        (2, 19, "Рыбы"),
+        (1, 20, "Водолей"),
+    ]
+    for m, d, sign in ranges:
+        if month > m or (month == m and day >= d):
+            return sign
+    return "Козерог"  # Jan 1–19
+
+
 def build_tarot_ai_interpretation(question: str | None, cards_payload: list[dict]) -> tuple[str | None, str | None]:
     if not (question and question.strip()):
         # Fast path for empty question: avoid long LLM generation on CPU-bound hosts.

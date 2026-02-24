@@ -437,3 +437,434 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* =========================================================
+   NEW SCREENS — added in redesign sprint
+   ========================================================= */
+
+/* ----- Oracle service cards (2×2 grid) ----- */
+.oracle-service-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.oracle-service-card {
+  cursor: pointer;
+  text-align: center;
+  padding: 14px 10px;
+  transition: transform 0.15s ease;
+}
+
+.oracle-service-card:active {
+  transform: scale(0.97);
+}
+
+.oracle-service-icon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.oracle-service-title {
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.oracle-service-desc {
+  font-size: 11px;
+  color: var(--smoke-600);
+  line-height: 1.4;
+}
+
+/* ----- Daily Forecast block ----- */
+.forecast-energy-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.forecast-energy-item {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+}
+
+.forecast-energy-label {
+  font-size: 10px;
+  color: var(--smoke-600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.forecast-energy-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gold-400);
+}
+
+/* ----- Tier picker (Free vs Premium side-by-side) ----- */
+.tier-picker {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.tier-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.tier-card--premium {
+  border-color: var(--gold-400) !important;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.06) 0%, rgba(255,255,255,0.04) 100%);
+}
+
+.tier-features {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  flex: 1;
+}
+
+.tier-features li {
+  font-size: 12px;
+  color: var(--smoke-600);
+  padding: 3px 0;
+  padding-left: 14px;
+  position: relative;
+}
+
+.tier-features li::before {
+  content: '✦';
+  position: absolute;
+  left: 0;
+  font-size: 9px;
+  color: var(--gold-400);
+  top: 5px;
+}
+
+/* ----- TierBadge ----- */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid;
+}
+
+.tier-badge--free {
+  color: var(--smoke-600);
+  border-color: var(--smoke-600);
+}
+
+.tier-badge--premium {
+  color: var(--gold-400);
+  border-color: var(--gold-400);
+}
+
+/* ----- Natal signature card ----- */
+.natal-signature-card {
+  /* reuses .parchment-card */
+}
+
+.natal-triple {
+  display: flex;
+  justify-content: space-around;
+  text-align: center;
+  gap: 8px;
+}
+
+.natal-triple-item {
+  flex: 1;
+}
+
+.natal-triple-label {
+  font-size: 11px;
+  color: var(--smoke-600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.natal-triple-value {
+  font-family: 'Cinzel', serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gold-400);
+}
+
+/* ----- Section header (icon + title) ----- */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-icon {
+  color: var(--gold-400);
+  font-size: 16px;
+}
+
+/* ----- Tarot card grid (8-card picker) ----- */
+.tarot-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.tarot-card-cell {
+  aspect-ratio: 2/3;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--azure-800, #1a2744) 0%, var(--azure-600, #263a66) 100%);
+  border: 1.5px solid rgba(100, 130, 200, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: rgba(160, 190, 255, 0.5);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.tarot-card-cell:active {
+  transform: scale(0.95);
+}
+
+.tarot-card-cell--selected {
+  border-color: var(--gold-400);
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(212, 175, 55, 0.05) 100%);
+}
+
+.tarot-card-back {
+  color: rgba(160, 190, 255, 0.4);
+  font-size: 20px;
+}
+
+.tarot-card-check {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 14px;
+  color: var(--gold-400);
+}
+
+/* ----- Tarot result row (3 cards side by side) ----- */
+.tarot-result-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tarot-result-card {
+  flex: 1;
+  text-align: center;
+  padding: 10px 6px !important;
+}
+
+.tarot-result-pos {
+  font-size: 10px;
+  color: var(--smoke-600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.tarot-result-name {
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.tarot-result-meaning {
+  font-size: 11px;
+  color: var(--smoke-600);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ----- Numerology grid ----- */
+.numerology-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.numerology-cell {
+  text-align: center;
+  padding: 8px 4px;
+}
+
+.numerology-cell-value {
+  font-family: 'Cinzel', serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gold-400);
+}
+
+.numerology-cell-label {
+  font-size: 10px;
+  color: var(--smoke-600);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* ----- Compatibility type selector ----- */
+.compat-type-selector {
+  display: flex;
+  gap: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.compat-type-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: transparent;
+  border: none;
+  color: var(--smoke-600);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  border-right: 1px solid rgba(255,255,255,0.1);
+}
+
+.compat-type-btn:last-child {
+  border-right: none;
+}
+
+.compat-type-btn--active {
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--gold-400);
+}
+
+.compat-type-icon {
+  font-size: 18px;
+}
+
+/* ----- Compatibility medallion ----- */
+.compat-medallion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 0;
+}
+
+.compat-medallion-ring {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid var(--score-color, var(--azure-500));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--score-color, var(--azure-500)) 30%, transparent);
+}
+
+.compat-medallion-value {
+  font-family: 'Cinzel', serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--score-color, var(--azure-500));
+  line-height: 1;
+}
+
+.compat-medallion-pct {
+  font-size: 11px;
+  color: var(--smoke-600);
+}
+
+.compat-medallion-label {
+  font-size: 12px;
+  color: var(--smoke-600);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ----- History filter chips ----- */
+.history-filter {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.chip--active {
+  background: rgba(212, 175, 55, 0.15);
+  border-color: var(--gold-400);
+  color: var(--gold-400);
+}
+
+/* ----- About section ----- */
+.about-section {}
+
+.about-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 4px 0;
+  color: var(--smoke-600);
+}
+
+.about-link {
+  background: none;
+  border: none;
+  color: var(--azure-500);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  padding: 6px 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ----- Horoscope slides ----- */
+.horoscope-slides {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.horoscope-slide-title {
+  font-family: 'Cinzel', serif;
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+/* ----- OrbLoader mini inline ----- */
+.orb-mini {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--azure-500);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

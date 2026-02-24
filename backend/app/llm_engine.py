@@ -1246,3 +1246,140 @@ async def interpret_forecast_stories_async(
     if len(slides) < 3:
         return None
     return slides
+
+
+# ── Compatibility (free + premium) ──────────────────────────────────
+
+_COMPAT_TYPE_LABELS_RU = {
+    "romantic": "романтическая пара",
+    "friendship": "дружба",
+    "work": "деловое партнёрство",
+}
+
+_COMPAT_FREE_SYSTEM_PROMPT = (
+    "Ты профессиональный астролог. Давай краткий анализ астрологической совместимости на русском языке. "
+    "Отвечай ТОЛЬКО валидным JSON строго по заданной схеме. "
+    "Без markdown, без пояснений вне JSON, без дополнительных ключей."
+)
+
+_COMPAT_FREE_REQUIRED_KEYS = frozenset({
+    "compatibility_score", "summary", "strength", "risk", "advice",
+})
+
+_COMPAT_PREMIUM_SYSTEM_PROMPT = (
+    "Ты профессиональный астролог. Давай глубокий анализ совместимости двух людей на русском языке. "
+    "Отвечай ТОЛЬКО валидным JSON строго по заданной схеме. "
+    "Без markdown, без пояснений вне JSON, без дополнительных ключей."
+)
+
+_COMPAT_PREMIUM_REQUIRED_KEYS = frozenset({
+    "compatibility_score", "summary", "green_flags", "red_flags",
+    "communication_tips", "time_windows", "follow_up_questions",
+})
+
+
+def _compat_person_block(sign: str, name: str | None) -> str:
+    if name:
+        return f"{name} (знак Солнца: {sign})"
+    return f"знак Солнца: {sign}"
+
+
+async def interpret_compat_free_async(
+    *,
+    compat_type: str,
+    sign_1: str,
+    sign_2: str,
+    name_1: str | None,
+    name_2: str | None,
+) -> dict[str, Any] | None:
+    """Free compatibility interpretation via OpenRouter. Returns structured JSON or None."""
+    compat_label = _COMPAT_TYPE_LABELS_RU.get(compat_type, compat_type)
+    person_1 = _compat_person_block(sign_1, name_1)
+    person_2 = _compat_person_block(sign_2, name_2)
+
+    user_prompt = (
+        f"Тип связи: {compat_label}\n"
+        f"Человек 1: {person_1}\n"
+        f"Человек 2: {person_2}\n\n"
+        "Верни JSON строго по схеме (все значения на русском):\n"
+        "{\n"
+        '  "compatibility_score": число от 0 до 100,\n'
+        '  "summary": "string 60-80 слов — общая суть совместимости",\n'
+        '  "strength": "string 30-50 слов — главная сила этой связи",\n'
+        '  "risk": "string 30-50 слов — главный риск или зона напряжения",\n'
+        '  "advice": "string 30-50 слов — краткий практический совет"\n'
+        "}"
+    )
+
+    raw = await _request_openrouter_json_async(
+        system_prompt=_COMPAT_FREE_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=600,
+        temperature=0.55,
+    )
+    if not raw or not _COMPAT_FREE_REQUIRED_KEYS.issubset(raw.keys()):
+        return None
+    score = raw.get("compatibility_score")
+    if not isinstance(score, (int, float)) or not (0 <= int(score) <= 100):
+        return None
+    return {
+        "compatibility_score": int(score),
+        "summary": str(raw.get("summary") or "").strip(),
+        "strength": str(raw.get("strength") or "").strip(),
+        "risk": str(raw.get("risk") or "").strip(),
+        "advice": str(raw.get("advice") or "").strip(),
+    }
+
+
+async def interpret_compat_premium_async(
+    *,
+    compat_type: str,
+    sign_1: str,
+    sign_2: str,
+    name_1: str | None,
+    name_2: str | None,
+) -> dict[str, Any] | None:
+    """Premium compatibility interpretation via OpenRouter Gemini. Returns structured JSON or None."""
+    compat_label = _COMPAT_TYPE_LABELS_RU.get(compat_type, compat_type)
+    person_1 = _compat_person_block(sign_1, name_1)
+    person_2 = _compat_person_block(sign_2, name_2)
+
+    user_prompt = (
+        f"Тип связи: {compat_label}\n"
+        f"Человек 1: {person_1}\n"
+        f"Человек 2: {person_2}\n\n"
+        "Верни JSON строго по схеме (все значения на русском, списки — минимум 3 элемента):\n"
+        "{\n"
+        '  "compatibility_score": число от 0 до 100,\n'
+        '  "summary": "string 100-150 слов — полная суть совместимости",\n'
+        '  "green_flags": ["позитивная черта 1", "позитивная черта 2", "позитивная черта 3"],\n'
+        '  "red_flags": ["зона риска 1", "зона риска 2", "зона риска 3"],\n'
+        '  "communication_tips": ["совет 1", "совет 2", "совет 3"],\n'
+        '  "time_windows": ["лучшее окно 1 на неделю", "лучшее окно 2"],\n'
+        '  "follow_up_questions": ["уточняющий вопрос 1?", "уточняющий вопрос 2?"]\n'
+        "}"
+    )
+
+    raw = await _request_openrouter_json_async(
+        system_prompt=_COMPAT_PREMIUM_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=1400,
+        temperature=0.6,
+    )
+    if not raw or not _COMPAT_PREMIUM_REQUIRED_KEYS.issubset(raw.keys()):
+        return None
+    score = raw.get("compatibility_score")
+    if not isinstance(score, (int, float)) or not (0 <= int(score) <= 100):
+        return None
+    for list_key in ("green_flags", "red_flags", "communication_tips", "follow_up_questions"):
+        if not isinstance(raw.get(list_key), list) or not raw[list_key]:
+            return None
+    return {
+        "compatibility_score": int(score),
+        "summary": str(raw.get("summary") or "").strip(),
+        "green_flags": [str(x) for x in raw["green_flags"]],
+        "red_flags": [str(x) for x in raw["red_flags"]],
+        "communication_tips": [str(x) for x in raw["communication_tips"]],
+        "time_windows": [str(x) for x in (raw.get("time_windows") or [])],
+        "follow_up_questions": [str(x) for x in raw["follow_up_questions"]],
+    }

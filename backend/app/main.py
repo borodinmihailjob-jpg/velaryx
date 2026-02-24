@@ -29,6 +29,10 @@ try:
     from .routers import numerology as numerology_router
 except ImportError:  # pragma: no cover
     numerology_router = None
+try:
+    from .routers import compat as compat_router
+except ImportError:  # pragma: no cover
+    compat_router = None
 
 
 logging.basicConfig(
@@ -205,3 +209,5 @@ app.include_router(users.router)
 app.include_router(tasks_router.router)
 if numerology_router is not None:
     app.include_router(numerology_router.router)
+if compat_router is not None:
+    app.include_router(compat_router.router)

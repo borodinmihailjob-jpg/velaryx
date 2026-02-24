@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     stars_price_natal_premium: int = 49
     stars_price_tarot_premium: int = 29
     stars_price_numerology_premium: int = 29
+    stars_price_compat_premium: int = 29
 
     def cors_origins(self) -> list[str]:
         raw = self.cors_origins_raw.strip()

@@ -65,6 +65,12 @@ def _product_catalog() -> dict[str, StarProduct]:
             title="Глубокий нумерологический отчёт",
             description="Подробный нумерологический анализ Gemini",
         ),
+        "compat_premium": StarProduct(
+            feature="compat_premium",
+            amount_stars=max(1, int(settings.stars_price_compat_premium)),
+            title="Глубокий разбор совместимости",
+            description="Детальный анализ совместимости двух людей с рекомендациями Gemini",
+        ),
         "wallet_topup_29": StarProduct(
             feature="wallet_topup_29",
             amount_stars=29,

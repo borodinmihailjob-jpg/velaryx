@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiRequest, pollTask, ApiError } from '../api';
+import { apiRequest, pollTask, ApiError, fetchDailyForecast, fetchTarotFree, fetchCompatFree } from '../api';
 
 // Ensure dev auth is enabled so tests don't throw auth errors
 Object.defineProperty(import.meta, 'env', {
@@ -111,5 +111,62 @@ describe('pollTask', () => {
     await expect(pollTask('task-slow', 10, 50)).rejects.toMatchObject({
       status: 408,
     });
+  });
+});
+
+describe('fetchDailyForecast', () => {
+  it('calls GET /v1/forecast/daily and returns result', async () => {
+    const mockData = { mood: 'Ясность', energy_score: 8 };
+    mockFetch(mockData);
+    const result = await fetchDailyForecast();
+    expect(result).toEqual(mockData);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/forecast/daily'),
+      expect.any(Object),
+    );
+  });
+});
+
+describe('fetchTarotFree', () => {
+  it('calls POST /v1/tarot/draw with spread_type three_card', async () => {
+    const mockData = { cards: [{ name: 'Шут' }], ai_interpretation: 'Суть: Начало' };
+    mockFetch(mockData);
+    const result = await fetchTarotFree('Что делать?');
+    expect(result).toEqual(mockData);
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toContain('/v1/tarot/draw');
+    expect(JSON.parse(opts.body)).toMatchObject({ spread_type: 'three_card', question: 'Что делать?' });
+  });
+
+  it('polls task if status is pending', async () => {
+    let call = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      call += 1;
+      const body = call === 1
+        ? { status: 'pending', task_id: 'tarot-task' }
+        : { status: 'done', result: { cards: [] } };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    });
+    const result = await fetchTarotFree('question', 10, 5000);
+    expect(result).toEqual({ cards: [] });
+  });
+});
+
+describe('fetchCompatFree', () => {
+  it('calls POST /v1/compat/free with payload and returns result', async () => {
+    const payload = {
+      compat_type: 'romantic',
+      birth_date_1: '1990-01-15',
+      birth_date_2: '1992-05-20',
+      name_1: 'Анна',
+      name_2: 'Иван',
+    };
+    const mockResult = { result: { compatibility_score: 78, summary: 'Хорошая совместимость' } };
+    mockFetch(mockResult);
+    const result = await fetchCompatFree(payload);
+    expect(result).toEqual(mockResult);
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toContain('/v1/compat/free');
+    expect(JSON.parse(opts.body)).toMatchObject({ compat_type: 'romantic' });
   });
 });

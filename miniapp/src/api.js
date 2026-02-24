@@ -540,3 +540,93 @@ export async function askOracle(question) {
     body: JSON.stringify({ spread_type: 'one_card', question }),
   });
 }
+
+/**
+ * Fetch daily forecast (cached per day).
+ * @returns {Promise<object>} - {mood, focus, energy_score, summary, lucky_hint, ...}
+ */
+export async function fetchDailyForecast() {
+  return apiRequest('/v1/forecast/daily');
+}
+
+/**
+ * Fetch story-format horoscope. Enqueues ARQ job, polls until complete.
+ * @returns {Promise<object>} - {slides: [...]}
+ */
+export async function fetchHoroscope() {
+  const data = await apiRequest('/v1/forecast/stories');
+  if (data?.status === 'pending' && data?.task_id) {
+    return pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
+
+/**
+ * Free natal chart. Enqueues ARQ job, polls until complete.
+ * @returns {Promise<object>} - {sun_sign, moon_sign, rising_sign, interpretation_sections: [...]}
+ */
+export async function fetchNatalFree() {
+  const data = await apiRequest('/v1/natal/full');
+  if (data?.status === 'pending' && data?.task_id) {
+    return pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
+
+/**
+ * Free 3-card tarot spread. Enqueues ARQ job, polls until complete.
+ * @param {string} question - user's question (may be empty)
+ * @returns {Promise<object>} - {cards: [...], ai_interpretation: string}
+ */
+export async function fetchTarotFree(question = '') {
+  const data = await apiRequest('/v1/tarot/draw', {
+    method: 'POST',
+    body: JSON.stringify({ spread_type: 'three_card', question: question || null }),
+  });
+  if (data?.status === 'pending' && data?.task_id) {
+    return pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
+
+/**
+ * Free compatibility report. Polls until complete.
+ * @param {object} payload - {compat_type, birth_date_1, birth_date_2, name_1?, name_2?}
+ * @returns {Promise<object>} - {result: {compatibility_score, summary, strength, risk, advice}}
+ */
+export async function fetchCompatFree(payload) {
+  const data = await apiRequest('/v1/compat/free', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (data?.status === 'pending' && data?.task_id) {
+    return pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
+
+/**
+ * Premium compatibility report via Stars payment. Polls until complete.
+ * @param {object} payload - {compat_type, birth_date_1, birth_date_2, name_1?, name_2?}
+ * @returns {Promise<object>} - {compatibility_score, summary, green_flags, red_flags, ...}
+ */
+export async function fetchCompatPremium(payload) {
+  let data;
+  try {
+    data = await apiRequest(withQueryParam('/v1/compat/premium', 'use_wallet', 'true'), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    if (!isWalletInsufficientError(err)) throw err;
+    const paymentId = await payStarsForFeature('compat_premium');
+    data = await apiRequest(withQueryParam('/v1/compat/premium', 'payment_id', paymentId), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+  if (data?.status === 'pending' && data?.task_id) {
+    return pollTask(data.task_id, 2000, 180_000);
+  }
+  return data;
+}
