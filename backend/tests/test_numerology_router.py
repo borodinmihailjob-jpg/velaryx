@@ -157,10 +157,11 @@ def test_premium_requires_auth(client):
 
 
 def test_premium_returns_pending_with_arq(client):
-    """With key + arq_pool the endpoint enqueues a job and returns pending."""
-    from unittest.mock import AsyncMock, MagicMock
+    """With key + arq_pool + mocked payment the endpoint enqueues a job and returns pending."""
+    from unittest.mock import AsyncMock, MagicMock, patch
     from app.main import app
     from app.config import settings
+    from app.star_payments import PremiumAccessClaim
 
     mock_job = MagicMock()
     mock_job.job_id = "premium-job-456"
@@ -170,8 +171,14 @@ def test_premium_returns_pending_with_arq(client):
     original_key = settings.openrouter_api_key
     settings.openrouter_api_key = "sk-or-test-key"
     app.state.arq_pool = mock_pool
+    fake_claim = PremiumAccessClaim(source="payment")
     try:
-        resp = client.post("/v1/numerology/premium", headers=HEADERS, json=VALID_PAYLOAD)
+        with (
+            patch("app.routers.numerology.star_payments.claim_premium_access", return_value=fake_claim),
+            patch("app.routers.numerology.star_payments.attach_premium_claim_task"),
+            patch("app.routers.numerology.star_payments.restore_premium_access_claim"),
+        ):
+            resp = client.post("/v1/numerology/premium", headers=HEADERS, json=VALID_PAYLOAD)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "pending"

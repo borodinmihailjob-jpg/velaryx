@@ -31,12 +31,12 @@ services:
           type: keyvalue
           name: astrobot-redis
           property: connectionString
+      - key: PYTHON_VERSION
+        value: 3.12.8
       - key: BOT_TOKEN
         sync: false
       - key: BOT_USERNAME
         sync: false
-      - key: PYTHON_VERSION
-        value: 3.12.8
       - key: INTERNAL_API_KEY
         sync: false
       - key: MINI_APP_NAME
@@ -77,14 +77,66 @@ services:
         value: "true"
       - key: TRANSLATION_TIMEOUT_SECONDS
         value: "8"
-      - key: OLLAMA_MODEL
-        value: qwen2.5:7b
-      - key: OLLAMA_BASE_URL
-        sync: false
-      - key: OLLAMA_TIMEOUT_SECONDS
-        value: "60"
       - key: LLM_PROVIDER
-        value: ollama
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: google/gemini-2.0-flash-001
+      - key: OPENROUTER_FREE_MODEL
+        sync: false
+      - key: OPENROUTER_TIMEOUT_SECONDS
+        value: "90"
+      - key: STARS_PRICE_NATAL_PREMIUM
+        value: "49"
+      - key: STARS_PRICE_TAROT_PREMIUM
+        value: "29"
+      - key: STARS_PRICE_NUMEROLOGY_PREMIUM
+        value: "29"
+
+  - type: worker
+    name: astrobot-arq-worker
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m arq app.worker.WorkerSettings
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: astrobot-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: astrobot-redis
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: LLM_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: google/gemini-2.0-flash-001
+      - key: OPENROUTER_FREE_MODEL
+        sync: false
+      - key: OPENROUTER_TIMEOUT_SECONDS
+        value: "90"
+      - key: ASTROLOGY_PROVIDER
+        value: astrologyapi
+      - key: ASTROLOGYAPI_BASE_URL
+        value: https://json.astrologyapi.com/v1
+      - key: ASTROLOGYAPI_USER_ID
+        sync: false
+      - key: ASTROLOGYAPI_API_KEY
+        sync: false
+      - key: TAROT_PROVIDER
+        value: tarotapi_dev
+      - key: TAROTAPI_BASE_URL
+        value: https://tarotapi.dev/api/v1
+      - key: TAROT_IMAGE_BASE_URL
+        value: https://raw.githubusercontent.com/metabismuth/tarot-json/master/cards
 
   - type: worker
     name: astrobot-bot

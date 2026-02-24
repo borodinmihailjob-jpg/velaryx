@@ -15,17 +15,6 @@ logger = logging.getLogger(__name__)
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _OPENROUTER_FREE_TIMEOUT_SECONDS = 25.0
 
-# Shared async HTTP client for Ollama (reused across ARQ worker calls)
-_async_client: httpx.AsyncClient | None = None
-
-
-def _get_async_client() -> httpx.AsyncClient:
-    global _async_client
-    if _async_client is None or _async_client.is_closed:
-        _async_client = httpx.AsyncClient(timeout=settings.ollama_timeout_seconds)
-    return _async_client
-
-
 # Shared async HTTP client for OpenRouter
 _openrouter_client: httpx.AsyncClient | None = None
 
@@ -98,15 +87,9 @@ TAROT_MAX_TOKENS_NO_QUESTION_BASIC = 90
 
 
 def llm_provider_label() -> str | None:
-    provider = settings.llm_provider.lower().strip()
-    if provider == "openrouter":
-        models = _openrouter_text_models()
-        model = models[0] if models else ""
-        return f"openrouter:{model}" if model else "openrouter"
-    model = settings.ollama_model.strip()
-    if not model:
-        return None
-    return f"ollama:{model}"
+    models = _openrouter_text_models()
+    model = models[0] if models else ""
+    return f"openrouter:{model}" if model else "openrouter"
 
 
 def _using_openrouter() -> bool:
@@ -128,90 +111,6 @@ def _base_instruction_prefix() -> str:
 
 def _limit_lines(lines: list[str], limit: int, compact: bool) -> list[str]:
     return lines[:limit] if compact else lines
-
-
-# ── Ollama (local) ─────────────────────────────────────────────────
-
-def _request_ollama_text(prompt: str, temperature: float, max_tokens: int) -> str | None:
-    model = settings.ollama_model.strip()
-    if not model:
-        return None
-
-    url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": f"{_base_instruction_prefix()}\n\n{prompt}",
-        "stream": False,
-        # Disable "thinking" mode for models like qwen3 to ensure text lands in `response`.
-        "think": False,
-        "options": {
-            "temperature": temperature,
-            "num_predict": max_tokens,
-        },
-    }
-    try:
-        response = httpx.post(
-            url,
-            json=payload,
-            timeout=settings.ollama_timeout_seconds,
-        )
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
-            return None
-        text = data.get("response")
-        if isinstance(text, str) and text.strip():
-            return text.strip()
-    except httpx.ReadTimeout:
-        logger.warning(
-            "Ollama request failed model=%s error=timeout after %ss",
-            model,
-            settings.ollama_timeout_seconds,
-        )
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code if exc.response is not None else -1
-        body = exc.response.text[:300] if exc.response is not None else ""
-        logger.warning("Ollama request failed model=%s status=%s body=%s", model, status, body)
-    except Exception as exc:
-        logger.warning("Ollama request failed model=%s error=%s", model, str(exc))
-    return None
-
-
-# ── Async Ollama client ─────────────────────────────────────────────
-
-async def _request_ollama_text_async(prompt: str, temperature: float, max_tokens: int) -> str | None:
-    model = settings.ollama_model.strip()
-    if not model:
-        return None
-
-    url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": f"{_base_instruction_prefix()}\n\n{prompt}",
-        "stream": False,
-        # Disable "thinking" mode for models like qwen3 to ensure text lands in `response`.
-        "think": False,
-        "options": {"temperature": temperature, "num_predict": max_tokens},
-    }
-    try:
-        client = _get_async_client()
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
-            return None
-        text = data.get("response")
-        if isinstance(text, str) and text.strip():
-            return text.strip()
-    except httpx.ReadTimeout:
-        logger.warning("Ollama async request failed model=%s error=timeout after %ss", model, settings.ollama_timeout_seconds)
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code if exc.response is not None else -1
-        body = exc.response.text[:300] if exc.response is not None else ""
-        logger.warning("Ollama async request failed model=%s status=%s body=%s", model, status, body)
-    except Exception as exc:
-        logger.warning("Ollama async request failed model=%s error=%s", model, str(exc))
-    return None
 
 
 def _openrouter_text_models() -> list[str]:
@@ -330,46 +229,28 @@ async def _request_openrouter_text_async(prompt: str, temperature: float, max_to
 
 
 async def _request_llm_text_async(prompt: str, temperature: float, max_tokens: int) -> str | None:
-    provider = settings.llm_provider.lower().strip()
     started_at = time.time()
-    logger.info("LLM async request | provider=%s", provider or "ollama")
-
-    if provider == "openrouter":
-        result = await _request_openrouter_text_async(prompt, temperature, max_tokens)
-    else:
-        if provider and provider != "ollama":
-            logger.warning("Unsupported llm_provider=%s, using ollama only", provider)
-        result = await _request_ollama_text_async(prompt, temperature, max_tokens)
-
+    logger.info("LLM async request | provider=openrouter")
+    result = await _request_openrouter_text_async(prompt, temperature, max_tokens)
     elapsed = time.time() - started_at
     if result:
-        logger.info("LLM async success | provider=%s | time=%.2fs", provider or "ollama", elapsed)
+        logger.info("LLM async success | provider=openrouter | time=%.2fs", elapsed)
         return result
-    logger.error("LLM async FAILED | provider=%s | time=%.2fs", provider or "ollama", elapsed)
+    logger.error("LLM async FAILED | provider=openrouter | time=%.2fs", elapsed)
     return None
 
 
 # ── Unified dispatcher ──────────────────────────────────────────────
 
 def _request_llm_text(prompt: str, temperature: float, max_tokens: int) -> str | None:
-    provider = settings.llm_provider.lower().strip()
     started_at = time.time()
-
-    if provider == "openrouter":
-        logger.info("LLM request | provider=openrouter")
-        result = _request_openrouter_text(prompt, temperature, max_tokens)
-    else:
-        if provider and provider != "ollama":
-            logger.warning("Unsupported llm_provider=%s, using ollama only", provider)
-        logger.info("LLM request | provider=ollama")
-        result = _request_ollama_text(prompt, temperature, max_tokens)
-    if result:
-        elapsed = time.time() - started_at
-        logger.info(f"LLM success | provider={(provider or 'ollama')} | time={elapsed:.2f}s")
-        return result
-
+    logger.info("LLM request | provider=openrouter")
+    result = _request_openrouter_text(prompt, temperature, max_tokens)
     elapsed = time.time() - started_at
-    logger.error(f"LLM FAILED | provider={(provider or 'ollama')} | time={elapsed:.2f}s")
+    if result:
+        logger.info("LLM success | provider=openrouter | time=%.2fs", elapsed)
+        return result
+    logger.error("LLM FAILED | provider=openrouter | time=%.2fs", elapsed)
     return None
 
 

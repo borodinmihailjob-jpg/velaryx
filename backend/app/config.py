@@ -50,13 +50,8 @@ class Settings(BaseSettings):
     translate_via_google_free: bool = True
     translation_timeout_seconds: float = 8.0
 
-    # Ollama (local LLM runtime)
-    ollama_model: str = "qwen2.5:7b"
-    ollama_base_url: str = "http://host.docker.internal:11434"
-    ollama_timeout_seconds: float = 30.0
-
-    # Runtime LLM provider for non-premium features ("ollama" or "openrouter").
-    llm_provider: str = "ollama"
+    # Runtime LLM provider for non-premium features (currently only "openrouter").
+    llm_provider: str = "openrouter"
 
     # OpenRouter (cloud LLM for premium features)
     openrouter_api_key: str | None = None
