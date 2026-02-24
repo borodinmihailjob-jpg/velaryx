@@ -28,6 +28,17 @@ def _serialize_payment_status(payment: models.StarPayment) -> schemas.StarsPayme
     )
 
 
+def _serialize_wallet_entry(entry: models.WalletLedger) -> schemas.WalletLedgerEntryResponse:
+    return schemas.WalletLedgerEntryResponse(
+        id=entry.id,
+        delta_stars=entry.delta_stars,
+        kind=entry.kind,
+        feature=entry.feature,
+        task_id=entry.task_id,
+        created_at=entry.created_at,
+    )
+
+
 def _check_internal_api_key(x_internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key")) -> None:
     if not settings.internal_api_key:
         raise HTTPException(status_code=503, detail="internal_api_key is not configured")
@@ -77,6 +88,21 @@ async def create_stars_invoice(
     )
 
 
+@router.get("/wallet", response_model=schemas.WalletSummaryResponse)
+@limiter.limit("60/minute")
+async def get_wallet_summary(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user_dep),
+):
+    entries = star_payments.list_wallet_ledger_entries(db, user=user, limit=15)
+    balance = star_payments.get_wallet_balance(db, user=user)
+    return schemas.WalletSummaryResponse(
+        balance_stars=balance,
+        recent_entries=[_serialize_wallet_entry(item) for item in entries],
+    )
+
+
 @router.get("/stars/{payment_id}", response_model=schemas.StarsPaymentStatusResponse)
 @limiter.limit("60/minute")
 async def get_stars_payment_status(
@@ -87,6 +113,25 @@ async def get_stars_payment_status(
 ):
     payment = star_payments.get_user_payment(db, user=user, payment_id=payment_id)
     return _serialize_payment_status(payment)
+
+
+@router.post("/stars/{payment_id}/send-to-chat", response_model=schemas.StarsSendToChatResponse)
+@limiter.limit("20/minute")
+async def send_stars_payment_to_chat(
+    request: Request,
+    payment_id: UUID,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(current_user_dep),
+):
+    payment = await star_payments.send_payment_invoice_to_chat(db, user=user, payment_id=payment_id)
+    logger.info(
+        "Stars invoice sent to chat | tg_user_id=%s | payment_id=%s | feature=%s | status=%s",
+        user.tg_user_id,
+        payment.id,
+        payment.feature,
+        payment.status,
+    )
+    return schemas.StarsSendToChatResponse(payment_id=payment.id, status=payment.status)
 
 
 @router.post("/internal/telegram-success", response_model=schemas.TelegramStarsPaymentConfirmResponse)
@@ -112,4 +157,3 @@ async def telegram_payment_success_callback(
         payment.status,
     )
     return schemas.TelegramStarsPaymentConfirmResponse(payment_id=payment.id, status=payment.status)
-

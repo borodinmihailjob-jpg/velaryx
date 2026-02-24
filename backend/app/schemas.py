@@ -198,10 +198,19 @@ class TaskStatusResponse(BaseModel):
 
 
 PremiumFeatureCode = Literal["natal_premium", "tarot_premium", "numerology_premium"]
+WalletTopupFeatureCode = Literal["wallet_topup_29", "wallet_topup_49", "wallet_topup_99"]
+StarsFeatureCode = Literal[
+    "natal_premium",
+    "tarot_premium",
+    "numerology_premium",
+    "wallet_topup_29",
+    "wallet_topup_49",
+    "wallet_topup_99",
+]
 
 
 class StarsCatalogItem(BaseModel):
-    feature: PremiumFeatureCode
+    feature: StarsFeatureCode
     amount_stars: int
     currency: Literal["XTR"] = "XTR"
     title: str
@@ -213,12 +222,12 @@ class StarsCatalogResponse(BaseModel):
 
 
 class StarsInvoiceCreateRequest(BaseModel):
-    feature: PremiumFeatureCode
+    feature: StarsFeatureCode
 
 
 class StarsInvoiceResponse(BaseModel):
     payment_id: UUID
-    feature: PremiumFeatureCode
+    feature: StarsFeatureCode
     amount_stars: int
     currency: str
     status: str
@@ -227,12 +236,18 @@ class StarsInvoiceResponse(BaseModel):
 
 class StarsPaymentStatusResponse(BaseModel):
     payment_id: UUID
-    feature: PremiumFeatureCode
+    feature: StarsFeatureCode
     amount_stars: int
     currency: str
     status: str
     paid_at: datetime | None = None
     consumed_at: datetime | None = None
+
+
+class StarsSendToChatResponse(BaseModel):
+    ok: bool = True
+    payment_id: UUID
+    status: str
 
 
 class TelegramStarsPaymentConfirmRequest(BaseModel):
@@ -248,6 +263,20 @@ class TelegramStarsPaymentConfirmResponse(BaseModel):
     ok: bool = True
     payment_id: UUID
     status: str
+
+
+class WalletLedgerEntryResponse(BaseModel):
+    id: UUID
+    delta_stars: int
+    kind: str
+    feature: str | None = None
+    task_id: str | None = None
+    created_at: datetime
+
+
+class WalletSummaryResponse(BaseModel):
+    balance_stars: int
+    recent_entries: list[WalletLedgerEntryResponse]
 
 
 class NumerologyCalculateRequest(BaseModel):

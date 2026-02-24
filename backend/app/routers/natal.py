@@ -238,6 +238,7 @@ async def get_full_natal(
 async def get_full_natal_premium(
     request: Request,
     payment_id: UUID | None = None,
+    use_wallet: bool = False,
     db: Session = Depends(get_db),
     user: models.User = Depends(current_user_dep),
 ):
@@ -265,11 +266,12 @@ async def get_full_natal_premium(
         rising_sign=str(chart.rising_sign or ""),
     )
 
-    star_payments.claim_paid_payment_for_feature(
+    access_claim = star_payments.claim_premium_access(
         db,
         user=user,
         feature="natal_premium",
         payment_id=payment_id,
+        use_wallet=use_wallet,
     )
     try:
         job = await arq_pool.enqueue_job(
@@ -297,10 +299,8 @@ async def get_full_natal_premium(
             full_aspects=list(material.get("full_aspect_lines") or []),
         )
     except Exception:
-        if payment_id is not None:
-            star_payments.restore_consumed_payment_to_paid(db, user=user, payment_id=payment_id)
+        star_payments.restore_premium_access_claim(db, user=user, claim=access_claim)
         raise
-    if payment_id is not None:
-        star_payments.attach_consumed_payment_task(db, user=user, payment_id=payment_id, task_id=job.job_id)
+    star_payments.attach_premium_claim_task(db, user=user, claim=access_claim, task_id=job.job_id)
     logger.info("Natal premium LLM enqueued | user_id=%s | job_id=%s", user.id, job.job_id)
     return JSONResponse({"status": "pending", "task_id": job.job_id})

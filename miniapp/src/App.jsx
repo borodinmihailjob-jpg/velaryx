@@ -9,8 +9,10 @@ import {
   fetchTarotPremium,
   fetchNumerologyPremium,
   fetchStarsCatalog,
+  fetchWalletSummary,
   fetchUserHistory,
   saveUserMbtiType,
+  topUpWalletBalance,
   persistUserLanguageCode,
   resolveUserLanguageCode,
 } from './api';
@@ -82,6 +84,28 @@ function getStarsPrice(starsPrices, feature) {
 function premiumButtonLabel(baseText, starsPrices, feature) {
   const price = getStarsPrice(starsPrices, feature);
   return price ? `${baseText} • ${price} ⭐` : baseText;
+}
+
+const WALLET_TOPUP_FEATURES = ['wallet_topup_29', 'wallet_topup_49', 'wallet_topup_99'];
+
+function walletTopupButtonLabel(starsPrices, feature) {
+  const price = getStarsPrice(starsPrices, feature);
+  if (price) return `+${price} ⭐`;
+  const fallback = Number(String(feature).split('_').pop());
+  return Number.isFinite(fallback) && fallback > 0 ? `+${fallback} ⭐` : 'Пополнить';
+}
+
+function walletEntryLabel(entry) {
+  if (!entry) return 'Операция';
+  if (entry.kind === 'topup_credit') return 'Пополнение баланса';
+  if (entry.kind === 'premium_debit') {
+    if (entry.feature === 'natal_premium') return 'Списание: Натал';
+    if (entry.feature === 'tarot_premium') return 'Списание: Таро';
+    if (entry.feature === 'numerology_premium') return 'Списание: Нумерология';
+    return 'Списание за отчёт';
+  }
+  if (entry.kind === 'premium_refund') return 'Возврат за отчёт';
+  return 'Операция';
 }
 
 const NUMEROLOGY_LOADING_HINTS = [
@@ -3291,9 +3315,13 @@ function ReportCard({ report }) {
   );
 }
 
-function ProfileScreen({ onOpenQuiz, mbtiType, onChangeMbti }) {
+function ProfileScreen({ onOpenQuiz, mbtiType, onChangeMbti, starsPrices }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [walletSummary, setWalletSummary] = useState({ balance_stars: 0, recent_entries: [] });
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [walletBusyFeature, setWalletBusyFeature] = useState('');
+  const [walletError, setWalletError] = useState('');
 
   useEffect(() => {
     fetchUserHistory()
@@ -3301,6 +3329,42 @@ function ProfileScreen({ onOpenQuiz, mbtiType, onChangeMbti }) {
       .catch(() => setReports([]))
       .finally(() => setLoading(false));
   }, []);
+
+  const loadWalletSummary = useCallback(() => {
+    setWalletLoading(true);
+    setWalletError('');
+    fetchWalletSummary()
+      .then((data) => {
+        setWalletSummary({
+          balance_stars: Number(data?.balance_stars || 0),
+          recent_entries: Array.isArray(data?.recent_entries) ? data.recent_entries : [],
+        });
+      })
+      .catch((e) => {
+        setWalletSummary({ balance_stars: 0, recent_entries: [] });
+        setWalletError(String(e?.message || 'Не удалось загрузить баланс'));
+      })
+      .finally(() => setWalletLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadWalletSummary();
+  }, [loadWalletSummary]);
+
+  const handleWalletTopUp = useCallback(async (feature) => {
+    if (walletBusyFeature) return;
+    setWalletBusyFeature(feature);
+    setWalletError('');
+    try {
+      await topUpWalletBalance(feature);
+      await loadWalletSummary();
+      window.alert('Баланс пополнен. Теперь премиум-отчёты будут списываться с кошелька автоматически.');
+    } catch (e) {
+      setWalletError(String(e?.message || 'Не удалось пополнить баланс'));
+    } finally {
+      setWalletBusyFeature('');
+    }
+  }, [walletBusyFeature, loadWalletSummary]);
 
   const grouped = {
     natal: reports.filter(r => r.type?.startsWith('natal')),
@@ -3373,6 +3437,107 @@ function ProfileScreen({ onOpenQuiz, mbtiType, onChangeMbti }) {
                 Открыть архетип разума →
               </motion.button>
             )}
+          </div>
+        </motion.div>
+
+        {/* Кошелёк */}
+        <motion.div variants={staggerItem}>
+          {sectionTitle('Баланс')}
+          <div
+            style={{
+              borderRadius: 'var(--radius-xl)',
+              padding: 'var(--spacing-3)',
+              border: '1px solid rgba(245,158,11,0.28)',
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(15,15,20,0.94) 100%)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Баланс сервиса</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#F59E0B' }}>
+                  {walletLoading ? '···' : `${Math.max(0, Number(walletSummary?.balance_stars || 0))} ⭐`}
+                </div>
+              </div>
+              <button
+                className="ghost"
+                type="button"
+                onClick={loadWalletSummary}
+                disabled={walletLoading || Boolean(walletBusyFeature)}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                Обновить
+              </button>
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              Пополните баланс один раз, дальше премиум-отчёты будут автоматически списываться с него.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+              {WALLET_TOPUP_FEATURES.map((feature) => (
+                <button
+                  key={feature}
+                  className="ghost"
+                  type="button"
+                  onClick={() => handleWalletTopUp(feature)}
+                  disabled={Boolean(walletBusyFeature)}
+                  style={{
+                    padding: '10px 8px',
+                    borderColor: walletBusyFeature === feature ? 'rgba(245,158,11,0.5)' : undefined,
+                    color: walletBusyFeature === feature ? '#F59E0B' : undefined,
+                  }}
+                >
+                  {walletBusyFeature === feature ? '...' : walletTopupButtonLabel(starsPrices, feature)}
+                </button>
+              ))}
+            </div>
+
+            {walletError && (
+              <div style={{ fontSize: 12, color: '#fca5a5' }}>{walletError}</div>
+            )}
+
+            <div style={{ borderTop: '1px solid var(--glass-medium)', paddingTop: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6 }}>Последние операции</div>
+              {walletLoading && (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Загрузка...</div>
+              )}
+              {!walletLoading && (!walletSummary?.recent_entries || walletSummary.recent_entries.length === 0) && (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Операций пока нет</div>
+              )}
+              {!walletLoading && (walletSummary?.recent_entries || []).slice(0, 5).map((entry, idx) => {
+                const delta = Number(entry?.delta_stars || 0);
+                const sign = delta > 0 ? '+' : '';
+                return (
+                  <div
+                    key={String(entry?.id || `${entry?.kind || 'entry'}-${idx}`)}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                      fontSize: 12,
+                      padding: '6px 0',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {walletEntryLabel(entry)}
+                      </div>
+                      <div style={{ color: 'var(--text-tertiary)' }}>
+                        {entry?.created_at ? new Date(entry.created_at).toLocaleString('ru-RU') : ''}
+                      </div>
+                    </div>
+                    <div style={{ color: delta >= 0 ? '#F59E0B' : 'var(--text-primary)', fontWeight: 700 }}>
+                      {`${sign}${delta} ⭐`}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </motion.div>
 
@@ -3606,6 +3771,7 @@ export default function App() {
           mbtiType={mbtiType}
           onOpenQuiz={() => setQuizOpen(true)}
           onChangeMbti={() => setQuizOpen(true)}
+          starsPrices={starsPrices}
         />
         <BottomTabBar activeView="profile" onHome={() => setView('dashboard')} onProfile={() => setView('profile')} />
       </>

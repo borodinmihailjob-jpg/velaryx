@@ -2,6 +2,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const DEV_AUTH_ALLOWED = import.meta.env.VITE_ALLOW_DEV_AUTH === 'true';
 const USER_LANG_STORAGE_KEY = 'astrobot_user_language_code';
 const PENDING_STARS_PAYMENT_STORAGE_KEY = 'astrobot_pending_stars_payment_v1';
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || '';
 
 // Default request timeout (90s — long enough for LLM fallback paths)
 const REQUEST_TIMEOUT_MS = 90_000;
@@ -179,6 +180,11 @@ function withQueryParam(path, key, value) {
   return `${path}${sep}${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`;
 }
 
+function isWalletInsufficientError(err) {
+  const message = String(err?.message || '').toLowerCase();
+  return err?.status === 402 && message.includes('баланс');
+}
+
 function readPendingStarsPayment() {
   try {
     const raw = localStorage.getItem(PENDING_STARS_PAYMENT_STORAGE_KEY);
@@ -232,27 +238,22 @@ function openTelegramInvoice(invoiceLink) {
   }
 
   if (tg?.openTelegramLink) {
-    try {
-      tg.openTelegramLink(invoiceLink);
-      return Promise.resolve('pending');
-    } catch (err) {
-      throw new ApiError(String(err?.message || err || 'Не удалось открыть счёт'), 0, null);
-    }
+    return Promise.resolve('fallback_send_to_chat');
   }
 
   if (tg?.openLink) {
-    try {
-      tg.openLink(invoiceLink);
-      return Promise.resolve('pending');
-    } catch (err) {
-      throw new ApiError(String(err?.message || err || 'Не удалось открыть счёт'), 0, null);
-    }
+    return Promise.resolve('fallback_send_to_chat');
   }
 
   if (tg) {
     // Old Telegram clients may not expose openInvoice/openTelegramLink.
-    window.location.href = invoiceLink;
-    return Promise.resolve('pending');
+    return Promise.resolve('fallback_send_to_chat');
+  }
+
+  // Some Telegram clients can pass tgWebAppData in URL but fail to inject the JS bridge.
+  // In that case, use the bot-chat fallback flow.
+  if (getTelegramInitData()) {
+    return Promise.resolve('fallback_send_to_chat');
   }
 
   throw new ApiError(
@@ -273,8 +274,38 @@ export async function fetchStarsCatalog() {
   return apiRequest('/v1/payments/stars/catalog');
 }
 
+export async function fetchWalletSummary() {
+  return apiRequest('/v1/payments/wallet');
+}
+
 async function fetchStarsPaymentStatus(paymentId) {
   return apiRequest(`/v1/payments/stars/${encodeURIComponent(paymentId)}`);
+}
+
+async function sendStarsInvoiceToChat(paymentId) {
+  return apiRequest(`/v1/payments/stars/${encodeURIComponent(paymentId)}/send-to-chat`, {
+    method: 'POST',
+  });
+}
+
+function openBotChatForPayment() {
+  const username = String(BOT_USERNAME || '').trim().replace(/^@/, '');
+  if (!username) return;
+  const url = `https://t.me/${username}`;
+  const tg = window.Telegram?.WebApp;
+  try {
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(url);
+      return;
+    }
+    if (tg?.openLink) {
+      tg.openLink(url);
+      return;
+    }
+  } catch {
+    // fallback below
+  }
+  window.location.href = url;
 }
 
 async function waitForStarsPaymentConfirmation(paymentId, timeoutMs = 60_000) {
@@ -323,6 +354,15 @@ async function resumePendingStarsPayment(feature) {
 
   if (pending.invoice_link) {
     const invoiceStatus = await openTelegramInvoice(pending.invoice_link);
+    if (invoiceStatus === 'fallback_send_to_chat') {
+      await sendStarsInvoiceToChat(pending.payment_id);
+      openBotChatForPayment();
+      throw new ApiError(
+        'Счёт отправлен в чат с ботом и чат открыт автоматически. Оплатите его там, затем вернитесь в Mini App и нажмите кнопку ещё раз.',
+        409,
+        pending,
+      );
+    }
     assertInvoiceOpenStatus(invoiceStatus, pending);
   }
 
@@ -348,6 +388,15 @@ async function payStarsForFeature(feature) {
   });
 
   const invoiceStatus = await openTelegramInvoice(invoice.invoice_link);
+  if (invoiceStatus === 'fallback_send_to_chat') {
+    await sendStarsInvoiceToChat(invoice.payment_id);
+    openBotChatForPayment();
+    throw new ApiError(
+      'Счёт отправлен в чат с ботом и чат открыт автоматически. Оплатите его там, затем вернитесь в Mini App и нажмите кнопку ещё раз.',
+      409,
+      invoice,
+    );
+  }
   assertInvoiceOpenStatus(invoiceStatus, invoice);
 
   await waitForStarsPaymentConfirmation(invoice.payment_id);
@@ -355,13 +404,23 @@ async function payStarsForFeature(feature) {
   return String(invoice.payment_id);
 }
 
+export async function topUpWalletBalance(feature) {
+  return payStarsForFeature(feature);
+}
+
 /**
  * Request premium natal chart via OpenRouter Gemini. Polls until complete.
  * @returns {Promise<object>} - result with {type:"natal_premium", report:{...}, sun_sign, moon_sign, rising_sign}
  */
 export async function fetchNatalPremium() {
-  const paymentId = await payStarsForFeature('natal_premium');
-  const data = await apiRequest(withQueryParam('/v1/natal/full/premium', 'payment_id', paymentId));
+  let data;
+  try {
+    data = await apiRequest(withQueryParam('/v1/natal/full/premium', 'use_wallet', 'true'));
+  } catch (err) {
+    if (!isWalletInsufficientError(err)) throw err;
+    const paymentId = await payStarsForFeature('natal_premium');
+    data = await apiRequest(withQueryParam('/v1/natal/full/premium', 'payment_id', paymentId));
+  }
   if (data.status === 'pending') {
     return await pollTask(data.task_id, 2000, 180_000);
   }
@@ -375,11 +434,20 @@ export async function fetchNatalPremium() {
  * @returns {Promise<object>} - result with {type:"tarot_premium", cards, report, question, ...}
  */
 export async function fetchTarotPremium(spreadType = 'three_card', question = '') {
-  const paymentId = await payStarsForFeature('tarot_premium');
-  const data = await apiRequest(withQueryParam('/v1/tarot/premium', 'payment_id', paymentId), {
-    method: 'POST',
-    body: JSON.stringify({ spread_type: spreadType, question: question || null }),
-  });
+  let data;
+  try {
+    data = await apiRequest(withQueryParam('/v1/tarot/premium', 'use_wallet', 'true'), {
+      method: 'POST',
+      body: JSON.stringify({ spread_type: spreadType, question: question || null }),
+    });
+  } catch (err) {
+    if (!isWalletInsufficientError(err)) throw err;
+    const paymentId = await payStarsForFeature('tarot_premium');
+    data = await apiRequest(withQueryParam('/v1/tarot/premium', 'payment_id', paymentId), {
+      method: 'POST',
+      body: JSON.stringify({ spread_type: spreadType, question: question || null }),
+    });
+  }
   if (data.status === 'pending') {
     return await pollTask(data.task_id, 2000, 180_000);
   }
@@ -409,11 +477,20 @@ export async function calculateNumerology(fullName, birthDate) {
  * @returns {Promise<object>} - result with {type:"numerology_premium", numbers:{...}, report:{...10 keys...}}
  */
 export async function fetchNumerologyPremium(fullName, birthDate) {
-  const paymentId = await payStarsForFeature('numerology_premium');
-  const data = await apiRequest(withQueryParam('/v1/numerology/premium', 'payment_id', paymentId), {
-    method: 'POST',
-    body: JSON.stringify({ full_name: fullName, birth_date: birthDate }),
-  });
+  let data;
+  try {
+    data = await apiRequest(withQueryParam('/v1/numerology/premium', 'use_wallet', 'true'), {
+      method: 'POST',
+      body: JSON.stringify({ full_name: fullName, birth_date: birthDate }),
+    });
+  } catch (err) {
+    if (!isWalletInsufficientError(err)) throw err;
+    const paymentId = await payStarsForFeature('numerology_premium');
+    data = await apiRequest(withQueryParam('/v1/numerology/premium', 'payment_id', paymentId), {
+      method: 'POST',
+      body: JSON.stringify({ full_name: fullName, birth_date: birthDate }),
+    });
+  }
   if (data.status === 'pending') {
     return await pollTask(data.task_id, 2000, 180_000);
   }

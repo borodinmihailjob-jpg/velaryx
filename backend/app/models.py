@@ -42,6 +42,7 @@ class User(Base):
     photo_url: Mapped[str | None] = mapped_column(Text)
     telegram_user_payload: Mapped[dict | None] = mapped_column(JSON)
     mbti_type: Mapped[str | None] = mapped_column(String(4))
+    wallet_balance: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -67,6 +68,35 @@ class StarPayment(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship("User")
+
+
+class WalletLedger(Base):
+    __tablename__ = "wallet_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(INT64, ForeignKey("users.id"), nullable=False, index=True)
+    tg_user_id: Mapped[int] = mapped_column(INT64, nullable=False, index=True)
+    delta_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    feature: Mapped[str | None] = mapped_column(String(64), index=True)
+    star_payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("star_payments.id"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    related_ledger_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wallet_ledger.id"),
+        nullable=True,
+        index=True,
+    )
+    task_id: Mapped[str | None] = mapped_column(String(128))
+    meta_payload: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user: Mapped[User] = relationship("User")
 
