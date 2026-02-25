@@ -297,7 +297,7 @@ function ServiceCard({ card, onNavigate }) {
       onClick={() => onNavigate(card.id)}
       aria-label={card.title}
     >
-      <div className="service-card-icon">{card.icon}</div>
+      <span className="service-card-icon">{card.icon}</span>
       <div className="service-card-content">
         <div className="service-card-title">{card.title}</div>
         <div className="service-card-desc">{card.desc}</div>
