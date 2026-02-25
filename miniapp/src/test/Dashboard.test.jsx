@@ -79,6 +79,20 @@ describe('App coordinator — navigation', () => {
     expect(screen.getByText('Нумерология')).toBeInTheDocument();
   });
 
+  it('oracle tab shows question input card and theme chips', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Velaryx')).toBeInTheDocument();
+    });
+
+    expect(screen.getByPlaceholderText(/Например/)).toBeInTheDocument();
+    expect(screen.getByText('Любовь')).toBeInTheDocument();
+    expect(screen.getByText('Деньги')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Получить знак' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Быстрый знак дня' })).toBeInTheDocument();
+  });
+
   it('switches to compatibility tab and shows type selector', async () => {
     render(<App />);
 
