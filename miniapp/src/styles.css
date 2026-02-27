@@ -1,16 +1,18 @@
 :root {
-  --parchment-50: #F3E9D6;
-  --parchment-100: #E8D7B7;
-  --parchment-200: #D2BF9E;
-  --ink-900: #2B241D;
-  --smoke-600: #7C6B58;
-  --gold-500: #C8A24A;
-  --gold-700: #8B6A2B;
-  --azure-500: #2B7BBE;
-  --azure-glow: #8FD3FF;
-  --shadow-card: 0 8px 24px rgba(43, 36, 29, 0.12);
-  --radius-card: 20px;
-  --ink-border: 1px solid rgba(43, 36, 29, 0.22);
+  /* Moder Witch dark system */
+  --parchment-50: #000000;
+  --parchment-100: #1c1c1e;
+  --parchment-200: #2a2a2e;
+  --ink-900: #ffffff;
+  --smoke-600: rgba(255, 255, 255, 0.55);
+  --gold-500: #6B8EF5;
+  --gold-400: #6B8EF5;
+  --gold-700: rgba(255, 255, 255, 0.7);
+  --azure-500: #6B8EF5;
+  --azure-glow: rgba(107, 142, 245, 0.45);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.6);
+  --radius-card: 16px;
+  --ink-border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -18,12 +20,12 @@
 }
 
 html {
-  background: var(--parchment-100);
+  background: #000;
 }
 
 body,
 #root {
-  background: var(--parchment-100);
+  background: #000;
   color: var(--ink-900);
   max-width: 480px;
   min-height: 100dvh;
@@ -82,38 +84,46 @@ button:disabled {
 .gold-btn {
   width: 100%;
   border: none;
-  background: linear-gradient(135deg, #C8A24A, #8B6A2B);
-  color: var(--ink-900);
+  background: #fff;
+  color: #000;
   height: 52px;
-  border-radius: 26px;
-  font-family: 'Cinzel', serif;
-  font-weight: 600;
+  border-radius: 50px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.3px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 16px;
-  box-shadow: 0 6px 16px rgba(139, 106, 43, 0.25);
-  transition: transform 160ms ease, filter 160ms ease;
+  padding: 0 20px;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.18);
+  transition: transform 150ms ease, opacity 150ms ease;
 }
 
 .gold-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  filter: saturate(1.05);
+  opacity: 0.92;
+}
+
+.gold-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .gold-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.3;
+  box-shadow: none;
 }
 
 .ink-btn {
   width: 100%;
   background: transparent;
-  border: var(--ink-border);
-  color: var(--ink-900);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.7);
   height: 48px;
-  border-radius: 24px;
+  border-radius: 50px;
   padding: 0 14px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -122,38 +132,39 @@ button:disabled {
 }
 
 .ink-btn:hover:not(:disabled) {
-  background: rgba(43, 36, 29, 0.04);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .chip {
-  background: rgba(200, 162, 74, 0.14);
-  border: 1px solid rgba(200, 162, 74, 0.35);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50px;
   padding: 6px 14px;
-  color: var(--ink-900);
+  color: rgba(255, 255, 255, 0.75);
   min-height: 34px;
+  font-size: 13px;
   text-align: left;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .input-field {
   width: 100%;
-  background: var(--parchment-50);
-  border: 1px solid var(--parchment-200);
-  border-radius: 12px;
-  padding: 12px;
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 12px 14px;
   font-size: 15px;
-  color: var(--ink-900);
+  color: #fff;
 }
 
 .input-field::placeholder {
-  color: var(--smoke-600);
-  opacity: 0.9;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 .input-field:focus {
-  border-color: var(--azure-500);
+  border-color: rgba(107, 142, 245, 0.5);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(43, 123, 190, 0.12);
+  box-shadow: 0 0 0 2px rgba(107, 142, 245, 0.15);
 }
 
 .badge {
@@ -161,11 +172,12 @@ button:disabled {
   align-items: center;
   gap: 6px;
   width: fit-content;
-  background: rgba(200, 162, 74, 0.18);
-  border: 1px solid rgba(200, 162, 74, 0.4);
+  background: rgba(107, 142, 245, 0.15);
+  border: 1px solid rgba(107, 142, 245, 0.35);
   border-radius: 20px;
   padding: 4px 12px;
   font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .bullet-row {
@@ -178,12 +190,12 @@ button:disabled {
 }
 
 .bullet-dot {
-  color: var(--gold-700);
+  color: rgba(107, 142, 245, 0.9);
   line-height: 1.3;
 }
 
 .upsell-card {
-  border-left: 3px solid var(--gold-500);
+  border-left: 3px solid rgba(107, 142, 245, 0.6) !important;
 }
 
 .bottom-nav {
@@ -192,12 +204,12 @@ button:disabled {
   left: 50%;
   transform: translateX(-50%);
   width: min(100%, 480px);
-  background: var(--parchment-200);
-  border-top: var(--ink-border);
+  background: rgba(10, 10, 12, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   height: 64px;
   z-index: 20;
-  box-shadow: 0 -6px 16px rgba(43, 36, 29, 0.08);
+  backdrop-filter: blur(12px);
 }
 
 .nav-tab {
@@ -210,12 +222,14 @@ button:disabled {
   font-size: 11px;
   border: 0;
   background: transparent;
-  color: var(--smoke-600);
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color 0.2s;
 }
 
 .nav-tab.active {
-  color: var(--gold-500);
+  color: #fff;
 }
 
 .screen {
@@ -234,8 +248,8 @@ button:disabled {
   border-bottom: var(--ink-border);
   position: sticky;
   top: 0;
-  background: rgba(232, 215, 183, 0.94);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(12px);
   z-index: 5;
 }
 
@@ -249,12 +263,12 @@ button:disabled {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(143, 211, 255, 0.45), rgba(43, 123, 190, 0.15)), var(--parchment-200);
+  background: radial-gradient(circle at 35% 30%, rgba(107, 142, 245, 0.3), rgba(107, 142, 245, 0.05)), #1c1c1e;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--gold-700);
-  border: 1px solid rgba(43, 36, 29, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .loading-screen {
@@ -283,15 +297,15 @@ button:disabled {
 }
 
 .error-banner {
-  background: rgba(165, 44, 30, 0.08);
-  border: 1px solid rgba(165, 44, 30, 0.22);
-  color: #7a261c;
+  background: rgba(200, 50, 40, 0.15);
+  border: 1px solid rgba(200, 50, 40, 0.35);
+  color: #ff8a80;
 }
 
 .info-banner {
-  background: rgba(43, 123, 190, 0.08);
-  border: 1px solid rgba(43, 123, 190, 0.2);
-  color: #275d87;
+  background: rgba(107, 142, 245, 0.1);
+  border: 1px solid rgba(107, 142, 245, 0.3);
+  color: rgba(255, 255, 255, 0.75);
   margin-top: 10px;
 }
 
@@ -327,7 +341,7 @@ button:disabled {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px dashed rgba(43, 36, 29, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .list-row:last-child {
@@ -481,6 +495,10 @@ button:disabled {
 }
 
 /* ----- Daily Forecast block ----- */
+.daily-forecast-block {
+  border-top: 2px solid rgba(107, 142, 245, 0.5) !important;
+}
+
 .forecast-energy-row {
   display: flex;
   gap: 10px;
@@ -523,8 +541,8 @@ button:disabled {
 }
 
 .tier-card--premium {
-  border-color: var(--gold-400) !important;
-  background: linear-gradient(135deg, rgba(212, 175, 55, 0.06) 0%, rgba(255,255,255,0.04) 100%);
+  border-color: rgba(107, 142, 245, 0.45) !important;
+  background: linear-gradient(135deg, rgba(107, 142, 245, 0.08) 0%, rgba(255,255,255,0.02) 100%);
 }
 
 .tier-features {
@@ -547,7 +565,7 @@ button:disabled {
   position: absolute;
   left: 0;
   font-size: 9px;
-  color: var(--gold-400);
+  color: rgba(107, 142, 245, 0.8);
   top: 5px;
 }
 
@@ -618,82 +636,201 @@ button:disabled {
   font-size: 16px;
 }
 
-/* ----- Tarot card grid (8-card picker) ----- */
-.tarot-card-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+/* ----- Moder Witch Tarot (dark theme) ----- */
+
+/* Primary white pill button */
+.mw-btn-primary {
+  display: block;
+  width: 100%;
+  padding: 16px 24px;
+  background: #fff;
+  color: #000;
+  border: none;
+  border-radius: 50px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.2);
+  transition: opacity 0.15s, transform 0.1s;
+  text-align: center;
 }
 
-.tarot-card-cell {
-  aspect-ratio: 2/3;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--azure-800, #1a2744) 0%, var(--azure-600, #263a66) 100%);
-  border: 1.5px solid rgba(100, 130, 200, 0.3);
+.mw-btn-primary:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.mw-btn-primary:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* Ghost text button */
+.mw-btn-ghost {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* Dark textarea */
+.mw-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1c1c1e;
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  min-height: 120px;
+}
+
+.mw-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.mw-input:focus {
+  box-shadow: 0 0 0 1.5px rgba(107, 142, 245, 0.5);
+}
+
+/* Topic chips */
+.mw-chip {
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mw-chip--active,
+.mw-chip:active {
+  background: rgba(107, 142, 245, 0.2);
+  border-color: rgba(107, 142, 245, 0.5);
+  color: #fff;
+}
+
+/* Blue pulsing orb */
+.mw-orb {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(107, 142, 245, 0.55) 0%,
+    rgba(107, 142, 245, 0.15) 50%,
+    transparent 70%
+  );
+  filter: blur(16px);
+  animation: mw-orb-pulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes mw-orb-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
+/* Radiating lines background */
+.mw-rays {
+  background-image: repeating-conic-gradient(
+    from 0deg at 50% 50%,
+    rgba(255, 255, 255, 0.018) 0deg 1deg,
+    transparent 1deg 9deg
+  );
+}
+
+/* Card base */
+.mw-card {
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
+  background: #1a1a1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  color: rgba(160, 190, 255, 0.5);
-  cursor: pointer;
+}
+
+.mw-card--front {
+  background: #111118;
+}
+
+/* Vesica piscis glow container */
+.mw-vesica {
   position: relative;
-  transition: border-color 0.2s, transform 0.15s;
-}
-
-.tarot-card-cell:active {
-  transform: scale(0.95);
-}
-
-.tarot-card-cell--selected {
-  border-color: var(--gold-400);
-  background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(212, 175, 55, 0.05) 100%);
-}
-
-.tarot-card-back {
-  color: rgba(160, 190, 255, 0.4);
-  font-size: 20px;
-}
-
-.tarot-card-check {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  font-size: 14px;
-  color: var(--gold-400);
-}
-
-/* ----- Tarot result row (3 cards side by side) ----- */
-.tarot-result-row {
+  width: 100%;
+  height: 100%;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
 }
 
-.tarot-result-card {
-  flex: 1;
-  text-align: center;
-  padding: 10px 6px !important;
+.mw-vesica::before {
+  content: '';
+  position: absolute;
+  width: 65%;
+  height: 55%;
+  background: radial-gradient(
+    ellipse,
+    rgba(107, 142, 245, 0.4) 0%,
+    transparent 70%
+  );
+  filter: blur(24px);
+  pointer-events: none;
 }
 
-.tarot-result-pos {
-  font-size: 10px;
-  color: var(--smoke-600);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+/* 3D card flip */
+.mw-flip-container {
+  perspective: 900px;
+  cursor: pointer;
 }
 
-.tarot-result-name {
-  font-family: 'Cinzel', serif;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.3;
+.mw-flip-container.flipped {
+  cursor: default;
 }
 
-.tarot-result-meaning {
-  font-size: 11px;
-  color: var(--smoke-600);
-  margin-top: 4px;
-  line-height: 1.4;
+.mw-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mw-flip-container.flipped .mw-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.mw-flip-front,
+.mw-flip-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.mw-flip-front {
+  transform: rotateY(180deg);
 }
 
 /* ----- Numerology grid ----- */
@@ -752,8 +889,8 @@ button:disabled {
 }
 
 .compat-type-btn--active {
-  background: rgba(212, 175, 55, 0.12);
-  color: var(--gold-400);
+  background: rgba(107, 142, 245, 0.15);
+  color: #fff;
 }
 
 .compat-type-icon {
@@ -811,9 +948,9 @@ button:disabled {
 }
 
 .chip--active {
-  background: rgba(212, 175, 55, 0.15);
-  border-color: var(--gold-400);
-  color: var(--gold-400);
+  background: rgba(107, 142, 245, 0.18);
+  border-color: rgba(107, 142, 245, 0.5);
+  color: #fff;
 }
 
 /* ----- About section ----- */
@@ -873,28 +1010,14 @@ button:disabled {
    VELARYX BRAND — Oracle tab missing classes
    ========================================================= */
 
-/* Background atmosphere — subtle gold glow at top, azure hint at bottom */
+/* Dark atmosphere — subtle blue glow at top */
 html {
-  background:
-    radial-gradient(ellipse 160% 50% at 50% -5%, rgba(200, 162, 74, 0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 30% at 90% 110%, rgba(43, 123, 190, 0.05) 0%, transparent 55%),
-    var(--parchment-100);
+  background: #000;
 }
 
 body,
 #root {
-  background: transparent;
-}
-
-/* Subtle parchment grain overlay */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 999;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='250'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='250' height='250' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  opacity: 1;
+  background: #000;
 }
 
 /* ----- Section title with ornamental gold divider ----- */
@@ -916,7 +1039,7 @@ body::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(to right, transparent, rgba(200, 162, 74, 0.45), transparent);
+  background: linear-gradient(to right, transparent, rgba(107, 142, 245, 0.35), transparent);
 }
 
 /* ----- Service cards — centered parchment cards for 2×2 grid ----- */
@@ -942,13 +1065,13 @@ body::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(200, 162, 74, 0.04) 0%, transparent 60%);
+  background: linear-gradient(135deg, rgba(107, 142, 245, 0.05) 0%, transparent 60%);
   pointer-events: none;
 }
 
 .service-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(43, 36, 29, 0.16);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .service-card:active {

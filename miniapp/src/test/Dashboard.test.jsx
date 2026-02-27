@@ -143,13 +143,12 @@ describe('App coordinator — navigation', () => {
     expect(tarotCard).not.toBeNull();
     fireEvent.click(tarotCard);
 
-    // TarotScreen should now be visible
+    // TarotScreen deck selection should now be visible
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Таро' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Какую колоду/i })).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Расклад карт')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Что меня ждёт/i)).toBeInTheDocument();
+    expect(screen.getByText(/Я использую физическую колоду/i)).toBeInTheDocument();
   });
 
   it('back button on screen returns to oracle hub', async () => {
@@ -163,7 +162,7 @@ describe('App coordinator — navigation', () => {
     fireEvent.click(tarotCard);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Таро' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Какую колоду/i })).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
